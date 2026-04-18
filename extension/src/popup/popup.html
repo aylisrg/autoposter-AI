@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>autoposter-AI</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        width: 280px;
+        padding: 16px;
+        margin: 0;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 12px;
+      }
+      .status {
+        font-size: 12px;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: #f3f4f6;
+      }
+      .status.ok {
+        background: #dcfce7;
+        color: #14532d;
+      }
+      .status.err {
+        background: #fee2e2;
+        color: #7f1d1d;
+      }
+      a {
+        font-size: 12px;
+        color: #2563eb;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>autoposter-AI</h1>
+    <div id="status" class="status">Checking backend...</div>
+    <p><a href="http://localhost:3000" target="_blank">Open dashboard</a></p>
+    <script>
+      fetch("http://localhost:8787/healthz")
+        .then((r) => r.json())
+        .then((d) => {
+          const el = document.getElementById("status");
+          if (d.extension_connected) {
+            el.className = "status ok";
+            el.textContent = "Connected to backend";
+          } else {
+            el.className = "status";
+            el.textContent = "Backend running, extension not linked yet";
+          }
+        })
+        .catch(() => {
+          const el = document.getElementById("status");
+          el.className = "status err";
+          el.textContent = "Backend not reachable on :8787";
+        });
+    </script>
+  </body>
+</html>

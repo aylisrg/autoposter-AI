@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "autoposter-AI",
+  "version": "0.1.0",
+  "description": "Local AI-powered social media posting companion",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://www.facebook.com/*",
+    "https://facebook.com/*",
+    "http://localhost:8787/*",
+    "ws://localhost:8787/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.facebook.com/*",
+        "https://facebook.com/*"
+      ],
+      "js": ["content/facebook.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "autoposter-AI"
+  },
+  "icons": {}
+}
