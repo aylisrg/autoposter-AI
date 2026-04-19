@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.agents.targets import cluster_targets, score_targets
-from app.db import get_session
+from app.db import get_current_profile, get_session
 from app.db.models import BusinessProfile, Target, TargetReviewStatus
 from app.platforms.facebook import FacebookPlatform
 from app.schemas import (
@@ -42,7 +42,7 @@ router = APIRouter(prefix="/api/targets", tags=["targets"])
 
 
 def _require_profile(db: Session) -> BusinessProfile:
-    profile = db.query(BusinessProfile).first()
+    profile = get_current_profile(db)
     if profile is None:
         raise HTTPException(
             status_code=400,

@@ -24,10 +24,21 @@ from app.agents import MalformedLLMResponse
 from app.api import api_router
 from app.config import settings
 from app.db import init_db
-from app.observability import RequestContextMiddleware, render_prometheus
+from app.observability import (
+    RequestContextMiddleware,
+    register_gauge_sampler,
+    render_prometheus,
+)
 from app.scheduler import scheduler
 from app.security import DashboardAuthMiddleware
+from app.services import health as health_samplers
 from app.ws.extension_bridge import bridge
+
+# Register live-sampled gauges for /metrics. Must happen at import time so the
+# first scrape after startup already has everything wired.
+register_gauge_sampler(health_samplers.sample_extension_status)
+register_gauge_sampler(health_samplers.sample_backup_age)
+register_gauge_sampler(health_samplers.sample_scheduler_depth)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("main")

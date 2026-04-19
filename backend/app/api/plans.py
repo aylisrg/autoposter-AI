@@ -30,7 +30,7 @@ from app.agents.planner import (
     refine_plan,
 )
 from app.ai.content import generate_post
-from app.db import get_session
+from app.db import get_current_profile, get_session
 from app.db.models import (
     BusinessProfile,
     ContentPlan,
@@ -67,7 +67,7 @@ def _eager(db: Session, plan_id: int) -> ContentPlan | None:
 
 
 def _require_profile(db: Session) -> BusinessProfile:
-    bp = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    bp = get_current_profile(db)
     if bp is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

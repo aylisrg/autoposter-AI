@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.ai.content import generate_post, generate_spintax_variant
 from app.ai.image import generate_image
-from app.db import get_session
+from app.db import get_current_profile, get_session
 from app.db.models import (
     BusinessProfile,
     Post,
@@ -114,7 +114,7 @@ def generate(
     payload: PostGenerate,
     db: Session = Depends(get_session),
 ) -> Post:
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
     if profile is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -266,7 +266,7 @@ async def publish_now(
         if not target_ids:
             raise HTTPException(status_code=400, detail="No active targets. Add some first.")
 
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
 
     variants = _ensure_variants(
         db,
@@ -338,7 +338,7 @@ def schedule(
 
     humanizer_profile = hz.get_or_create_profile(db)
     post.scheduled_for = hz.apply_schedule_jitter(payload.scheduled_for, humanizer_profile)
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
     _ensure_variants(
         db,
         post,
@@ -418,7 +418,7 @@ def approve_post(
     post = _eager_load(db, post_id)
     if post is None:
         raise HTTPException(status_code=404, detail="Post not found")
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
     _approve_single(db, post, payload.target_ids, payload.scheduled_for, profile)
     refreshed = _eager_load(db, post.id)
     if refreshed is None:
@@ -467,7 +467,7 @@ def regenerate_post(
             status_code=409,
             detail="Only PENDING_REVIEW / DRAFT posts can be regenerated.",
         )
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
     if profile is None:
         raise HTTPException(status_code=400, detail="Business profile required.")
 
@@ -508,7 +508,7 @@ def approve_all(
     if payload.post_type is not None:
         q = q.filter(Post.post_type == payload.post_type)
     pending = q.all()
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
     approved: list[Post] = []
     for post in pending:
         _approve_single(db, post, [], payload.scheduled_for, profile)
