@@ -232,6 +232,27 @@ def threads_publish_container(
     return data["id"]
 
 
+def get_followers_count(account_id: str, access_token: str, *, is_threads: bool = False) -> int:
+    """Current follower count for a Page, IG Business account, or Threads user.
+
+    - FB Page / IG Business → ``followers_count`` via graph.facebook.com.
+    - Threads user → ``followers_count`` via graph.threads.net.
+
+    Raises `MetaError` on API failure; we deliberately don't swallow here
+    so the scheduler can log and skip, and retries happen at the job level.
+    """
+    base = THREADS_BASE if is_threads else GRAPH_BASE
+    with httpx.Client(timeout=30) as c:
+        resp = c.get(
+            f"{base}/{account_id}",
+            params={"fields": "followers_count", "access_token": access_token},
+        )
+    data = _raise_if_error(resp)
+    # Meta returns the field as a plain int; fall through to 0 if missing so
+    # we record a deliberate "we asked, got nothing" rather than crashing.
+    return int(data.get("followers_count") or 0)
+
+
 def threads_insights(media_id: str, access_token: str) -> dict:
     with httpx.Client(timeout=30) as c:
         resp = c.get(

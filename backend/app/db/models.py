@@ -594,3 +594,20 @@ class FewShotExample(Base):
     text: Mapped[str] = mapped_column(Text)
     engagement_score: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class FollowerSnapshot(Base):
+    """Daily follower count per connected platform account. A time series —
+    we never update a row, we insert a new one. Growth deltas are computed
+    on read.
+    """
+
+    __tablename__ = "follower_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    platform_id: Mapped[str] = mapped_column(String(50), index=True)
+    account_id: Mapped[str] = mapped_column(String(100), index=True)
+    followers: Mapped[int] = mapped_column(Integer)
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True
+    )
