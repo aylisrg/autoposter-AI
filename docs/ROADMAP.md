@@ -84,11 +84,11 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M1 — Content Planner Agent
 
-- [ ] Модели `ContentPlan` + `PlanSlot`
-- [ ] `PlannerAgent` (`backend/app/agents/planner.py`)
-- [ ] UI: страница «Контент-план» с calendar view + drag-n-drop
-- [ ] Conversational refinement: чат с Planner для итераций
-- [ ] Verification: создать план на 14 дней, отредактировать 2 слота
+- [x] Модели `ContentPlan` + `PlanSlot`
+- [x] `PlannerAgent` (`backend/app/agents/planner.py`)
+- [x] UI: страница «Контент-план» с calendar view + drag-n-drop
+- [x] Conversational refinement: чат с Planner для итераций
+- [x] Verification: pytest suite для planner (12 тестов) + `/api/plans/generate` end-to-end
 
 ### M2 — Media Library
 

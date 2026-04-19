@@ -289,4 +289,132 @@ export async function uploadMedia(
   return resp.json();
 }
 
+// ---------- Content Plans (M1) ----------
+
+export type PlanStatus = "draft" | "active" | "archived";
+export type SlotStatus =
+  | "planned"
+  | "generated"
+  | "scheduled"
+  | "posted"
+  | "skipped";
+
+export interface PlanSlot {
+  id: number;
+  plan_id: number;
+  scheduled_for: string;
+  post_type: PostType;
+  topic_hint: string | null;
+  rationale: string | null;
+  status: SlotStatus;
+  post_id: number | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface ContentPlan {
+  id: number;
+  name: string;
+  goal: string | null;
+  start_date: string;
+  end_date: string;
+  status: PlanStatus;
+  generation_params: Record<string, unknown>;
+  chat_history: { role: "user" | "assistant"; content: string }[];
+  generation_cost_usd: number;
+  created_at: string;
+  updated_at: string;
+  slots: PlanSlot[];
+}
+
+export const listPlans = (status?: PlanStatus) => {
+  const q = status ? `?status_filter=${status}` : "";
+  return request<ContentPlan[]>(`/api/plans${q}`);
+};
+
+export const getPlan = (id: number) => request<ContentPlan>(`/api/plans/${id}`);
+
+export const generatePlan = (payload: {
+  name: string;
+  goal?: string | null;
+  start_date: string;
+  end_date: string;
+}) =>
+  request<ContentPlan>("/api/plans/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const createEmptyPlan = (payload: {
+  name: string;
+  goal?: string | null;
+  start_date: string;
+  end_date: string;
+}) =>
+  request<ContentPlan>("/api/plans", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const patchPlan = (
+  id: number,
+  patch: { name?: string; goal?: string | null; status?: PlanStatus },
+) =>
+  request<ContentPlan>(`/api/plans/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+export const deletePlan = (id: number) =>
+  request<void>(`/api/plans/${id}`, { method: "DELETE" });
+
+export const chatPlan = (id: number, message: string) =>
+  request<{ reply: string; updated: boolean; plan: ContentPlan }>(
+    `/api/plans/${id}/chat`,
+    {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    },
+  );
+
+export const createSlot = (
+  planId: number,
+  payload: {
+    scheduled_for: string;
+    post_type: PostType;
+    topic_hint?: string | null;
+    rationale?: string | null;
+    notes?: string | null;
+  },
+) =>
+  request<PlanSlot>(`/api/plans/${planId}/slots`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const patchSlot = (
+  slotId: number,
+  patch: {
+    scheduled_for?: string;
+    post_type?: PostType;
+    topic_hint?: string | null;
+    rationale?: string | null;
+    notes?: string | null;
+    status?: SlotStatus;
+  },
+) =>
+  request<PlanSlot>(`/api/plans/slots/${slotId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+export const deleteSlot = (slotId: number) =>
+  request<void>(`/api/plans/slots/${slotId}`, { method: "DELETE" });
+
+export const generatePostFromSlot = (slotId: number) =>
+  request<{ slot: PlanSlot; post: Post }>(
+    `/api/plans/slots/${slotId}/generate-post`,
+    { method: "POST" },
+  );
+
 export { ApiError };

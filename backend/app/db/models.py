@@ -226,3 +226,78 @@ class LogEntry(Base):
     message: Mapped[str] = mapped_column(Text)
     meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ---------- Content Planner (M1) ----------
+
+
+class PlanStatus(str, enum.Enum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
+class SlotStatus(str, enum.Enum):
+    PLANNED = "planned"       # Slot exists, no Post yet
+    GENERATED = "generated"   # Post drafted from slot
+    SCHEDULED = "scheduled"   # Post scheduled for publishing
+    POSTED = "posted"         # Published
+    SKIPPED = "skipped"       # User chose to skip
+
+
+class ContentPlan(Base):
+    """A content plan covers a date range and groups many PlanSlots.
+
+    One business profile can have many plans (e.g. "Q2 launch", "July specials").
+    Only one is usually `active` at a time, but that's not enforced — the user is free.
+    """
+    __tablename__ = "content_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))
+    goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    start_date: Mapped[datetime] = mapped_column(DateTime)
+    end_date: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[PlanStatus] = mapped_column(Enum(PlanStatus), default=PlanStatus.DRAFT)
+    # Snapshot of knobs at generation time (tone, posts_per_day, ratios, ...)
+    generation_params: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Transcript of planner chat turns: [{"role": "user"|"assistant", "content": "..."}]
+    chat_history: Mapped[list] = mapped_column(JSON, default=list)
+    generation_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    slots: Mapped[list[PlanSlot]] = relationship(
+        back_populates="plan",
+        cascade="all, delete-orphan",
+        order_by="PlanSlot.scheduled_for.asc()",
+    )
+
+
+class PlanSlot(Base):
+    """A single slot inside a ContentPlan.
+
+    A slot is a "plan to write a post of type X on date Y about topic Z". Once the user
+    generates the actual post text for this slot, `post_id` is filled and `status`
+    moves to GENERATED/SCHEDULED/POSTED.
+    """
+    __tablename__ = "plan_slots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    plan_id: Mapped[int] = mapped_column(ForeignKey("content_plans.id"))
+    scheduled_for: Mapped[datetime] = mapped_column(DateTime)
+    post_type: Mapped[PostType] = mapped_column(Enum(PostType))
+    topic_hint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Planner's rationale for picking this slot — why this type, why this time
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[SlotStatus] = mapped_column(Enum(SlotStatus), default=SlotStatus.PLANNED)
+    post_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    plan: Mapped[ContentPlan] = relationship(back_populates="slots")
+    post: Mapped[Post | None] = relationship()

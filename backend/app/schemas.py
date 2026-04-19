@@ -14,8 +14,10 @@ from app.db.models import (
     EmojiDensity,
     FeedbackRating,
     Length,
+    PlanStatus,
     PostStatus,
     PostType,
+    SlotStatus,
     Tone,
 )
 
@@ -202,3 +204,92 @@ class StatusOut(BaseModel):
     scheduler_running: bool
     next_scheduled_post_at: datetime | None
     pending_posts: int
+
+
+# ---------- Content Plan (M1) ----------
+
+
+class PlanSlotOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    plan_id: int
+    scheduled_for: datetime
+    post_type: PostType
+    topic_hint: str | None
+    rationale: str | None
+    status: SlotStatus
+    post_id: int | None
+    notes: str | None
+    created_at: datetime
+
+
+class PlanSlotIn(BaseModel):
+    scheduled_for: datetime
+    post_type: PostType
+    topic_hint: str | None = None
+    rationale: str | None = None
+    notes: str | None = None
+
+
+class PlanSlotPatch(BaseModel):
+    scheduled_for: datetime | None = None
+    post_type: PostType | None = None
+    topic_hint: str | None = None
+    rationale: str | None = None
+    notes: str | None = None
+    status: SlotStatus | None = None
+
+
+class ContentPlanOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    goal: str | None
+    start_date: datetime
+    end_date: datetime
+    status: PlanStatus
+    generation_params: dict
+    chat_history: list
+    generation_cost_usd: float
+    created_at: datetime
+    updated_at: datetime
+    slots: list[PlanSlotOut] = Field(default_factory=list)
+
+
+class ContentPlanPatch(BaseModel):
+    name: str | None = None
+    goal: str | None = None
+    status: PlanStatus | None = None
+
+
+class PlanGenerateRequest(BaseModel):
+    """Ask the PlannerAgent to generate a new plan.
+
+    `replace_existing_slots` — if true and the plan already has slots, delete them
+    before inserting new ones.
+    """
+
+    name: str
+    goal: str | None = None
+    start_date: datetime
+    end_date: datetime
+    replace_existing_slots: bool = True
+
+
+class PlanChatRequest(BaseModel):
+    message: str
+
+
+class PlanChatResponse(BaseModel):
+    reply: str
+    updated: bool
+    plan: ContentPlanOut
+
+
+class SlotGeneratePostResponse(BaseModel):
+    """Returned after generating a Post from a slot."""
+
+    slot: PlanSlotOut
+    post: PostOut

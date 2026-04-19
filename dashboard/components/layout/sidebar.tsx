@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Calendar,
+  CalendarDays,
   Home,
   ListChecks,
   PenSquare,
@@ -14,6 +15,7 @@ import {
 const NAV = [
   { href: "/profile", label: "Business Profile", icon: Home },
   { href: "/targets", label: "Targets", icon: Users },
+  { href: "/plans", label: "Content Plans", icon: CalendarDays },
   { href: "/compose", label: "Compose", icon: PenSquare },
   { href: "/queue", label: "Queue", icon: ListChecks },
 ];
