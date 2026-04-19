@@ -11,8 +11,6 @@ produces ops that silently no-op on SQLite.
 """
 from __future__ import annotations
 
-from logging.config import fileConfig
-
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
@@ -21,8 +19,10 @@ from app.db.models import Base
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# Intentionally do NOT call logging.config.fileConfig on alembic.ini — our
+# app configures the root logger at startup (see app.observability.configure_logging),
+# and fileConfig would overwrite root level to the ini's WARNING, silently
+# dropping every INFO-level access/audit line the app emits.
 
 # Inject the URL at runtime. .env (via pydantic-settings) is the source of truth.
 config.set_main_option("sqlalchemy.url", settings.db_url)

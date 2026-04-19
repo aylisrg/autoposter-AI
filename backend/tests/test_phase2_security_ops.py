@@ -14,8 +14,6 @@ from __future__ import annotations
 import json
 import logging
 
-import pytest
-
 from app.db.models import PlatformCredential
 
 
@@ -70,14 +68,16 @@ def test_json_formatter_stringifies_unserialisable_extras():
 
 
 def test_configure_logging_is_idempotent():
-    from app.observability import configure_logging
+    from app.observability import _OUR_HANDLER_MARKER, configure_logging
 
     configure_logging(json_output=True)
     configure_logging(json_output=False)
     configure_logging(json_output=True)
     root = logging.getLogger()
-    # One handler after repeat calls, not three.
-    assert len(root.handlers) == 1
+    # Exactly one of the handlers *we* installed, regardless of any foreign
+    # handlers (pytest caplog, uvicorn, etc.) that happen to be attached.
+    ours = [h for h in root.handlers if getattr(h, _OUR_HANDLER_MARKER, False)]
+    assert len(ours) == 1
 
 
 # ---------- Access log extras ----------
@@ -275,15 +275,3 @@ def test_log_json_setting_defaults_false():
     from app.config import settings
 
     assert settings.log_json is False
-
-
-@pytest.fixture(autouse=True)
-def _restore_logging_after_test():
-    """Tests that touch configure_logging mutate the root logger; restore
-    something sane afterwards so other tests' caplog captures still work.
-    """
-    yield
-    root = logging.getLogger()
-    for h in list(root.handlers):
-        root.removeHandler(h)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
