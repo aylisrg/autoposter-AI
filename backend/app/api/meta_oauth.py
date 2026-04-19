@@ -33,6 +33,7 @@ from app.schemas import (
     MetaOAuthUrlOut,
     PlatformCredentialOut,
 )
+from app.services.audit import audit_event
 
 log = logging.getLogger("api.meta_oauth")
 
@@ -68,7 +69,9 @@ def _upsert_credential(
         )
         .one_or_none()
     )
-    if row is None:
+    is_new = row is None
+    changed: list[str] = []
+    if is_new:
         row = PlatformCredential(
             platform_id=platform_id,
             account_id=account_id,
@@ -78,13 +81,25 @@ def _upsert_credential(
         )
         db.add(row)
     else:
-        row.access_token = access_token
-        if username:
+        if row.access_token_encrypted != access_token:
+            row.access_token = access_token
+            changed.append("access_token")
+        if username and row.username != username:
             row.username = username
-        if extra is not None:
+            changed.append("username")
+        if extra is not None and row.extra != extra:
             row.extra = extra
+            changed.append("extra")
     db.commit()
     db.refresh(row)
+    audit_event(
+        "created" if is_new else "updated",
+        "platform_credential",
+        credential_id=row.id,
+        platform_id=platform_id,
+        account_id=account_id,
+        changed_fields=None if is_new else changed,
+    )
     return row
 
 

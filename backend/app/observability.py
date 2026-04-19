@@ -1,7 +1,9 @@
 """Observability helpers — request IDs, access log, Prometheus-ish metrics.
 
-No external deps. Structured logs are pipe-separated key=value pairs; easy to
-grep and still parseable with a small awk script.
+Logs: when `settings.log_json` is set, each record is emitted as one JSON
+object per line (`ts`, `level`, `logger`, `message`, plus any extras like
+`request_id`, `method`, `path`, `status`, `ms`, `event`, `user_action`).
+Default is the human-readable `asctime [logger] message` format for local dev.
 
 `/metrics` returns a Prometheus exposition-format text body. We count:
 - http_requests_total{path,method,status}
@@ -19,10 +21,12 @@ a self-hosted tool.
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import defaultdict
 from collections.abc import Callable
+from datetime import UTC, datetime
 from threading import Lock
 
 from fastapi import Request, Response
@@ -31,6 +35,65 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.security import new_request_id
 
 log = logging.getLogger("http")
+
+
+# ---------- JSON log formatter ----------
+#
+# Anything a caller passes via `extra={...}` ends up as an attribute on the
+# LogRecord; we scoop those into the JSON payload. `_LOG_RECORD_STD_ATTRS` is
+# the allowlist of stdlib attributes we skip — everything else is
+# caller-provided.
+_LOG_RECORD_STD_ATTRS = frozenset(
+    {
+        "args", "asctime", "created", "exc_info", "exc_text", "filename",
+        "funcName", "levelname", "levelno", "lineno", "message", "module",
+        "msecs", "msg", "name", "pathname", "process", "processName",
+        "relativeCreated", "stack_info", "thread", "threadName", "taskName",
+    }
+)
+
+
+class JsonFormatter(logging.Formatter):
+    """Render a LogRecord as a single-line JSON object."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict[str, object] = {
+            "ts": datetime.fromtimestamp(record.created, UTC).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        for key, value in record.__dict__.items():
+            if key in _LOG_RECORD_STD_ATTRS or key.startswith("_") or key in payload:
+                continue
+            try:
+                json.dumps(value)
+                payload[key] = value
+            except TypeError:
+                payload[key] = repr(value)
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
+
+
+def configure_logging(json_output: bool, level: int = logging.INFO) -> None:
+    """Wire up the root logger. Called once from main.py at startup.
+
+    Idempotent: wipes existing handlers so re-running (e.g. uvicorn reload or
+    pytest re-import) doesn't double-emit every line.
+    """
+    root = logging.getLogger()
+    root.setLevel(level)
+    for handler in list(root.handlers):
+        root.removeHandler(handler)
+    handler = logging.StreamHandler()
+    if json_output:
+        handler.setFormatter(JsonFormatter())
+    else:
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(name)s] %(message)s")
+        )
+    root.addHandler(handler)
 
 
 # ---------- Counters ----------
@@ -123,28 +186,38 @@ def _escape(v: str) -> str:
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    """Attaches a request_id to each request/response; logs access line."""
+    """Attaches a request_id to each request/response; logs access line.
+
+    Access records carry structured extras so that when `LOG_JSON=true` each
+    line is machine-parseable without regex: `request_id`, `method`, `path`,
+    `status`, `ms`.
+    """
 
     async def dispatch(self, request: Request, call_next):
         rid = request.headers.get("X-Request-ID") or new_request_id()
         start = time.perf_counter()
         request.state.request_id = rid
+        method = request.method
+        path = request.url.path
         try:
             response: Response = await call_next(request)
         except Exception:
             duration = (time.perf_counter() - start) * 1000
             log.exception(
-                "rid=%s method=%s path=%s status=500 ms=%.1f",
-                rid,
-                request.method,
-                request.url.path,
-                duration,
+                "request failed",
+                extra={
+                    "request_id": rid,
+                    "method": method,
+                    "path": path,
+                    "status": 500,
+                    "ms": round(duration, 1),
+                },
             )
             counter_inc(
                 "http_requests_total",
                 {
-                    "path": _normalize_path(request.url.path),
-                    "method": request.method,
+                    "path": _normalize_path(path),
+                    "method": method,
                     "status": "500",
                 },
             )
@@ -152,18 +225,20 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         duration = (time.perf_counter() - start) * 1000
         response.headers["X-Request-ID"] = rid
         log.info(
-            "rid=%s method=%s path=%s status=%d ms=%.1f",
-            rid,
-            request.method,
-            request.url.path,
-            response.status_code,
-            duration,
+            "request completed",
+            extra={
+                "request_id": rid,
+                "method": method,
+                "path": path,
+                "status": response.status_code,
+                "ms": round(duration, 1),
+            },
         )
         counter_inc(
             "http_requests_total",
             {
-                "path": _normalize_path(request.url.path),
-                "method": request.method,
+                "path": _normalize_path(path),
+                "method": method,
                 "status": str(response.status_code),
             },
         )
