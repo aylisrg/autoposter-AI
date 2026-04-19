@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.db import get_session
 from app.db.models import PlatformCredential
 from app.schemas import PlatformCredentialOut
+from app.services.audit import audit_event
 
 router = APIRouter(prefix="/api/platform-credentials", tags=["platforms"])
 
@@ -30,5 +31,14 @@ def delete_credential(credential_id: int, db: Session = Depends(get_session)) ->
     row = db.get(PlatformCredential, credential_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Credential not found")
+    platform_id = row.platform_id
+    account_id = row.account_id
     db.delete(row)
     db.commit()
+    audit_event(
+        "deleted",
+        "platform_credential",
+        credential_id=credential_id,
+        platform_id=platform_id,
+        account_id=account_id,
+    )

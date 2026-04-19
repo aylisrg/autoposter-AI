@@ -64,5 +64,9 @@ class Settings(BaseSettings):
     backup_dir: str = "data/backups"
     backup_keep_days: int = 14
 
+    # Observability — emit logs as JSON (for aggregators / shipping to a file
+    # sink). Default off so local dev keeps the human-readable format.
+    log_json: bool = False
+
 
 settings = Settings()

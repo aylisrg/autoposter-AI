@@ -26,6 +26,7 @@ from app.config import settings
 from app.db import init_db
 from app.observability import (
     RequestContextMiddleware,
+    configure_logging,
     register_gauge_sampler,
     render_prometheus,
 )
@@ -40,7 +41,7 @@ register_gauge_sampler(health_samplers.sample_extension_status)
 register_gauge_sampler(health_samplers.sample_backup_age)
 register_gauge_sampler(health_samplers.sample_scheduler_depth)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
+configure_logging(json_output=settings.log_json, level=logging.INFO)
 log = logging.getLogger("main")
 
 

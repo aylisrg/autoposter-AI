@@ -1,0 +1,21 @@
+# gitleaks config for autoposter-AI.
+#
+# Starts from the built-in default ruleset (detects generic API keys, AWS,
+# GCP, Slack, etc.) and layers a couple of project-specific ignores so the
+# scanner doesn't cry wolf on intentional dev defaults committed to .env.example.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Intentional dev-only placeholders and example values."
+paths = [
+  '''\.env\.example''',
+  '''docs/.*\.md''',
+  '''README\.md''',
+]
+regexes = [
+  # 44-char urlsafe base64 Fernet keys literally named as placeholders in docs.
+  '''FERNET_KEY=<.*>''',
+  '''FERNET_KEY=your-?.*''',
+]
