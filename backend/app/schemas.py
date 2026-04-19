@@ -565,3 +565,47 @@ class OptimizerProposalOut(BaseModel):
     auto_applied: bool
     applied_at: datetime | None
     created_at: datetime
+
+
+# ---------- Platform credentials + OAuth (M7) ----------
+
+
+class PlatformCredentialOut(BaseModel):
+    """Safe view of a PlatformCredential — never returns the access_token."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    platform_id: str
+    account_id: str
+    username: str | None
+    token_expires_at: datetime | None
+    extra: dict
+    created_at: datetime
+    updated_at: datetime
+
+
+class MetaOAuthUrlOut(BaseModel):
+    """The login URL we redirect the user to. `state` is random per request."""
+
+    url: str
+    state: str
+
+
+class MetaOAuthCompleteOut(BaseModel):
+    """Summary of what the callback stored."""
+
+    instagram: PlatformCredentialOut | None = None
+    threads: PlatformCredentialOut | None = None
+    message: str
+
+
+class MetaManualCredentialIn(BaseModel):
+    """Escape hatch for CLI users — paste a long-lived token + account id(s)
+    directly without running through the OAuth redirect.
+    """
+
+    platform_id: str  # "instagram" or "threads"
+    account_id: str
+    username: str | None = None
+    access_token: str

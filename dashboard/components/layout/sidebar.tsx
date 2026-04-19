@@ -10,6 +10,7 @@ import {
   CheckSquare,
   Home,
   Image as ImageIcon,
+  Link2,
   ListChecks,
   PenSquare,
   ShieldCheck,
@@ -25,6 +26,7 @@ const NAV = [
   { href: "/review", label: "Review", icon: CheckSquare },
   { href: "/queue", label: "Queue", icon: ListChecks },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/platforms", label: "Platforms", icon: Link2 },
   { href: "/humanizer", label: "Humanizer", icon: ShieldCheck },
 ];
 

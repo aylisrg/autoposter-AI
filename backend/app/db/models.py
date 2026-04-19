@@ -534,6 +534,32 @@ class OptimizerProposal(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class PlatformCredential(Base):
+    """Per-platform OAuth credential. One row per (platform_id, account_id).
+
+    For M7 this covers Meta (Instagram + Threads — both live under the same
+    App, so in practice one long-lived token serves both). For later
+    platforms (LinkedIn, X, Reddit) the same shape works.
+
+    Storage: plaintext for v1; M8 adds Fernet-at-rest encryption to
+    `access_token`.
+    """
+
+    __tablename__ = "platform_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    platform_id: Mapped[str] = mapped_column(String(50), index=True)
+    account_id: Mapped[str] = mapped_column(String(100))
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    access_token: Mapped[str] = mapped_column(Text)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    extra: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class FewShotExample(Base):
     """Curated top-performing posts used as few-shot examples for Writer.
 

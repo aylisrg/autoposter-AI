@@ -159,12 +159,23 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M7 — Multi-Platform: Instagram + Threads
 
-- [ ] `InstagramPlatform` (Meta Graph API): photo, carousel, reels, stories
-- [ ] `ThreadsPlatform` (Meta Threads API)
-- [ ] `adapt_content`: длина, hashtag density, формат per platform
-- [ ] OAuth flow для Meta App в dashboard
-- [ ] Cross-posting: один PlanSlot → во все платформы с адаптацией
-- [ ] Verification: один план → одновременная публикация во все 3 платформы
+- [x] `InstagramPlatform` (Meta Graph API v21.0, two-step container flow):
+      photo + caption; carousel/reels/stories отложены
+- [x] `ThreadsPlatform` (Meta Threads API v1.0): text-only + text+image;
+      video отложен
+- [x] `adapt_content`: IG — 2200 char cap + 30 hashtag cap; Threads — 500
+      char cap на word boundary; FB — без изменений
+- [x] `PlatformCredential` model + OAuth flow (`/api/meta/oauth/url` +
+      `/api/meta/oauth/callback` → long-lived token + probe /me/accounts →
+      upsert IG + Threads credentials)
+- [x] Dashboard `/platforms` page с OAuth кнопкой + manual paste fallback
+- [x] Platform registry (`backend/app/platforms/registry.py`) —
+      scheduler / posts API / metrics service дергают `get_platform(id)`
+- [x] Cross-posting: `target_ids` могут спанить несколько платформ; scheduler
+      + publish_now дергают нужный Platform по `target.platform_id` и
+      применяют `adapt_content` per variant
+- [x] Verification: 22 pytest (adapt_content, publish mocked, metrics,
+      OAuth URL, credential CRUD, list_targets)
 
 ### M8 — Production Polish
 

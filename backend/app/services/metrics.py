@@ -26,7 +26,7 @@ from app.db.models import (
     PostVariant,
     Target,
 )
-from app.platforms.facebook import FacebookPlatform
+from app.platforms.registry import get_platform
 
 log = logging.getLogger("services.metrics")
 
@@ -49,11 +49,9 @@ def compute_engagement_score(
     return float(likes) + 2.0 * float(comments) + 3.0 * float(shares)
 
 
-def _platform_for(platform_id: str):
-    """Factory. Keep small; real multi-platform dispatch lives in registry."""
-    if platform_id == "facebook":
-        return FacebookPlatform()
-    return None
+def _platform_for(platform_id: str, db: Session | None = None):
+    """Resolve a platform instance via the shared registry."""
+    return get_platform(platform_id, db=db)
 
 
 def _pending_windows(variant: PostVariant, existing: set[MetricsWindow]) -> list[MetricsWindow]:
@@ -97,7 +95,7 @@ async def collect_for_variant(
     target = db.get(Target, variant.target_id)
     if target is None:
         return []
-    platform = _platform_for(target.platform_id)
+    platform = _platform_for(target.platform_id, db=db)
     if platform is None:
         log.info(
             "No metrics fetcher for platform %s (variant %s)",

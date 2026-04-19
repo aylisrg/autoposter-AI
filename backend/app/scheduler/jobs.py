@@ -22,7 +22,7 @@ from sqlalchemy.orm import selectinload
 from app.config import settings
 from app.db import SessionLocal
 from app.db.models import Post, PostStatus, PostVariant, Target
-from app.platforms.facebook import FacebookPlatform
+from app.platforms.registry import get_platform
 from app.services import humanizer as hz
 
 log = logging.getLogger("scheduler.jobs")
@@ -41,14 +41,22 @@ def _posts_today(db) -> int:
 
 
 async def _publish_one(
-    post: Post, variant: PostVariant, target: Target, humanizer_config: dict | None = None
+    post: Post,
+    variant: PostVariant,
+    target: Target,
+    humanizer_config: dict | None = None,
+    db=None,
 ) -> None:
-    platform = FacebookPlatform()
+    platform = get_platform(target.platform_id, db=db)
+    if platform is None:
+        variant.status = PostStatus.FAILED
+        variant.error = f"Unknown platform_id: {target.platform_id}"
+        return
     synthetic = Post(
         id=post.id,
         post_type=post.post_type,
         status=PostStatus.POSTING,
-        text=variant.text,
+        text=platform.adapt_content(variant.text),
         image_url=post.image_url,
         first_comment=post.first_comment,
         cta_url=post.cta_url,
@@ -140,13 +148,18 @@ async def publish_due_posts() -> None:
                     db.commit()
                     continue
 
-                await _publish_one(post, variant, target, humanizer_config=humanizer_config)
+                await _publish_one(
+                    post, variant, target, humanizer_config=humanizer_config, db=db
+                )
                 db.commit()
+                platform_id = target.platform_id
                 if variant.status == PostStatus.POSTED:
                     posted_today += 1
-                    hz.on_success(db, platform_id="facebook")
+                    hz.on_success(db, platform_id=platform_id)
                 else:
-                    hz.on_failure(db, platform_id="facebook", reason=variant.error or "")
+                    hz.on_failure(
+                        db, platform_id=platform_id, reason=variant.error or ""
+                    )
                     # on_failure may have activated a pause — next loop iteration
                     # picks that up and aborts.
 

@@ -111,7 +111,7 @@ async def test_collect_metrics_writes_one_hour_row(db):
         return {"likes": 10, "comments": 2, "shares": 1, "reach": None}
 
     with patch(
-        "app.services.metrics.FacebookPlatform.fetch_metrics",
+        "app.platforms.facebook.FacebookPlatform.fetch_metrics",
         new=fake_fetch,
     ):
         result = await metrics_service.collect_metrics(db)
@@ -134,7 +134,7 @@ async def test_collect_metrics_idempotent(db):
     async def fake_fetch(self, external_post_id):
         return {"likes": 5, "comments": 1, "shares": 0, "reach": None}
 
-    with patch("app.services.metrics.FacebookPlatform.fetch_metrics", new=fake_fetch):
+    with patch("app.platforms.facebook.FacebookPlatform.fetch_metrics", new=fake_fetch):
         await metrics_service.collect_metrics(db)
         await metrics_service.collect_metrics(db)  # second call — no new rows
 
@@ -151,7 +151,7 @@ async def test_collect_metrics_respects_max_age(db):
     async def fake_fetch(self, external_post_id):
         return {"likes": 1000}
 
-    with patch("app.services.metrics.FacebookPlatform.fetch_metrics", new=fake_fetch):
+    with patch("app.platforms.facebook.FacebookPlatform.fetch_metrics", new=fake_fetch):
         result = await metrics_service.collect_metrics(db)
 
     assert result["rows_created"] == 0
@@ -167,7 +167,7 @@ async def test_collect_metrics_multiple_windows_at_8_days(db):
     async def fake_fetch(self, external_post_id):
         return {"likes": 20, "comments": 4, "shares": 2}
 
-    with patch("app.services.metrics.FacebookPlatform.fetch_metrics", new=fake_fetch):
+    with patch("app.platforms.facebook.FacebookPlatform.fetch_metrics", new=fake_fetch):
         await metrics_service.collect_metrics(db)
 
     windows = {

@@ -8,7 +8,9 @@ from app.api import (
     health,
     humanizer,
     media,
+    meta_oauth,
     plans,
+    platform_credentials,
     posts,
     targets,
 )
@@ -23,5 +25,7 @@ api_router.include_router(feedback.router)
 api_router.include_router(media.router)
 api_router.include_router(humanizer.router)
 api_router.include_router(analytics.router)
+api_router.include_router(meta_oauth.router)
+api_router.include_router(platform_credentials.router)
 
 __all__ = ["api_router"]

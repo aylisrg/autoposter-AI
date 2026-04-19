@@ -23,7 +23,7 @@ from app.db.models import (
     PostVariant,
     Target,
 )
-from app.platforms.facebook import FacebookPlatform
+from app.platforms.registry import get_platform
 from app.schemas import (
     PostApproveAllRequest,
     PostApproveRequest,
@@ -210,16 +210,22 @@ def _ensure_variants(
     return out
 
 
-async def _publish_variant(post: Post, variant: PostVariant, target: Target) -> None:
-    """Dispatch one variant through the Facebook platform. Mutates `variant`."""
-    platform = FacebookPlatform()
+async def _publish_variant(
+    post: Post, variant: PostVariant, target: Target, db: Session
+) -> None:
+    """Dispatch one variant through the right platform. Mutates `variant`."""
+    platform = get_platform(target.platform_id, db=db)
+    if platform is None:
+        variant.status = PostStatus.FAILED
+        variant.error = f"Unknown platform_id: {target.platform_id}"
+        return
     variant.status = PostStatus.POSTING
     try:
         synthetic_post = Post(
             id=post.id,
             post_type=post.post_type,
             status=PostStatus.POSTING,
-            text=variant.text,
+            text=platform.adapt_content(variant.text),
             image_url=post.image_url,
             first_comment=post.first_comment,
             cta_url=post.cta_url,
@@ -276,7 +282,7 @@ async def publish_now(
             variant.status = PostStatus.FAILED
             variant.error = "Target row vanished between enqueue and publish."
             continue
-        await _publish_variant(post, variant, target)
+        await _publish_variant(post, variant, target, db)
         db.commit()
 
     any_ok = any(v.status == PostStatus.POSTED for v in variants)

@@ -163,14 +163,14 @@ def test_full_publish_flow(client, fake_generate_post, fake_spintax):
     post_id = post["id"]
 
     # 4. Publish now — patch FacebookPlatform.publish to avoid touching the bridge.
-    async def fake_publish(self, post, target):
+    async def fake_publish(self, post, target, humanizer=None):
         return PublishResult(
             ok=True,
             external_post_id=f"https://www.facebook.com/groups/{target.id}/posts/fake",
         )
 
     with patch(
-        "app.api.posts.FacebookPlatform.publish",
+        "app.platforms.facebook.FacebookPlatform.publish",
         new=fake_publish,
     ):
         r = client.post(

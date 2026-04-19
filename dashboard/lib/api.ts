@@ -783,4 +783,48 @@ export const rejectProposal = (id: number) =>
 export const refreshFewShotStore = () =>
   request<{ inserted: number }>("/api/few-shot/refresh", { method: "POST" });
 
+// ---------- M7: Platforms (Instagram / Threads) ----------
+
+export interface PlatformCredential {
+  id: number;
+  platform_id: string;
+  account_id: string;
+  username: string | null;
+  token_expires_at: string | null;
+  extra: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetaOAuthUrl {
+  url: string;
+  state: string;
+}
+
+export interface MetaOAuthComplete {
+  instagram: PlatformCredential | null;
+  threads: PlatformCredential | null;
+  message: string;
+}
+
+export const getMetaOAuthUrl = () =>
+  request<MetaOAuthUrl>("/api/meta/oauth/url");
+
+export const addManualCredential = (payload: {
+  platform_id: "instagram" | "threads";
+  account_id: string;
+  username?: string;
+  access_token: string;
+}) =>
+  request<PlatformCredential>("/api/meta/credentials", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const listPlatformCredentials = () =>
+  request<PlatformCredential[]>("/api/platform-credentials");
+
+export const deletePlatformCredential = (id: number) =>
+  request<void>(`/api/platform-credentials/${id}`, { method: "DELETE" });
+
 export { ApiError };
