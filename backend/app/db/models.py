@@ -117,12 +117,24 @@ class BusinessProfile(Base):
     )
 
 
+class TargetReviewStatus(str, enum.Enum):
+    """M3: user decision on a scraped target."""
+    PENDING = "pending"      # Scraped but user hasn't seen it yet
+    APPROVED = "approved"    # User wants to post here
+    REJECTED = "rejected"    # User does NOT want to post here
+
+
 class Target(Base):
     """A place to post to: FB group, FB page, LinkedIn profile, X account, subreddit, etc.
 
     Platform-agnostic on purpose. `platform_id` is FK to Platform registry key
     ("facebook", "linkedin"...). `external_id` is what the platform uses (group URL,
     page ID, subreddit name, Telegram chat ID, ...).
+
+    M3 fields: `description_snippet` / `category` are scraped from FB; `relevance_score`
+    and `ai_reasoning` are the TargetAgent's judgement; `review_status` tracks whether
+    the user has approved this target. `source` = "manual" | "scraped_joined" |
+    "scraped_suggested".
     """
     __tablename__ = "targets"
 
@@ -135,6 +147,16 @@ class Target(Base):
     list_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     member_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    # M3 — discovery + AI scoring
+    description_snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    relevance_score: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0-100
+    ai_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_status: Mapped[TargetReviewStatus] = mapped_column(
+        Enum(TargetReviewStatus), default=TargetReviewStatus.PENDING
+    )
+    source: Mapped[str] = mapped_column(String(30), default="manual")
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 

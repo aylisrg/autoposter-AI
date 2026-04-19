@@ -54,6 +54,8 @@ export interface BusinessProfile {
   updated_at: string;
 }
 
+export type TargetReviewStatus = "pending" | "approved" | "rejected";
+
 export interface Target {
   id: number;
   platform_id: string;
@@ -64,6 +66,12 @@ export interface Target {
   member_count: number | null;
   active: boolean;
   created_at: string;
+  description_snippet: string | null;
+  category: string | null;
+  source: string;
+  relevance_score: number | null;
+  ai_reasoning: string | null;
+  review_status: TargetReviewStatus;
 }
 
 export interface PostVariant {
@@ -188,6 +196,61 @@ export const patchTarget = (id: number, patch: Partial<Target>) =>
 
 export const syncTargets = () =>
   request<Target[]>("/api/targets/sync", { method: "POST" });
+
+export const listTargetsFiltered = (params: {
+  platform_id?: string;
+  active_only?: boolean;
+  review_status?: TargetReviewStatus;
+  list_name?: string;
+}) => {
+  const q = new URLSearchParams();
+  if (params.platform_id) q.set("platform_id", params.platform_id);
+  if (params.active_only) q.set("active_only", "true");
+  if (params.review_status) q.set("review_status", params.review_status);
+  if (params.list_name) q.set("list_name", params.list_name);
+  const qs = q.toString();
+  return request<Target[]>(`/api/targets${qs ? "?" + qs : ""}`);
+};
+
+export interface TargetDiscoverResult {
+  created: number;
+  updated: number;
+  targets: Target[];
+}
+
+export const discoverTargets = () =>
+  request<TargetDiscoverResult>("/api/targets/discover", { method: "POST" });
+
+export interface TargetScoreResponse {
+  scored: Array<{ target_id: number; score: number; reasoning: string }>;
+  cost_usd: number;
+}
+
+export const scoreTargets = (target_ids: number[] = []) =>
+  request<TargetScoreResponse>("/api/targets/score", {
+    method: "POST",
+    body: JSON.stringify({ target_ids }),
+  });
+
+export interface TargetClusterResponse {
+  lists: Array<{ list_name: string; target_ids: number[] }>;
+  cost_usd: number;
+}
+
+export const clusterTargets = (target_ids: number[] = []) =>
+  request<TargetClusterResponse>("/api/targets/cluster", {
+    method: "POST",
+    body: JSON.stringify({ target_ids }),
+  });
+
+export const bulkReviewTargets = (
+  target_ids: number[],
+  review_status: TargetReviewStatus,
+) =>
+  request<Target[]>("/api/targets/bulk-review", {
+    method: "POST",
+    body: JSON.stringify({ target_ids, review_status }),
+  });
 
 // ---------- Posts ----------
 

@@ -19,6 +19,7 @@ from app.db.models import (
     PostStatus,
     PostType,
     SlotStatus,
+    TargetReviewStatus,
     Tone,
 )
 
@@ -65,6 +66,9 @@ class TargetIn(BaseModel):
     list_name: str | None = None
     member_count: int | None = None
     active: bool = True
+    description_snippet: str | None = None
+    category: str | None = None
+    source: str = "manual"
 
 
 class TargetPatch(BaseModel):
@@ -73,6 +77,9 @@ class TargetPatch(BaseModel):
     list_name: str | None = None
     member_count: int | None = None
     active: bool | None = None
+    description_snippet: str | None = None
+    category: str | None = None
+    review_status: TargetReviewStatus | None = None
 
 
 class TargetOut(TargetIn):
@@ -80,6 +87,56 @@ class TargetOut(TargetIn):
 
     id: int
     created_at: datetime
+    relevance_score: int | None = None
+    ai_reasoning: str | None = None
+    review_status: TargetReviewStatus = TargetReviewStatus.PENDING
+
+
+# ---------- M3: Target Agent ----------
+
+
+class TargetDiscoverResult(BaseModel):
+    created: int
+    updated: int
+    targets: list[TargetOut]
+
+
+class TargetScoreRequest(BaseModel):
+    """Score a specific subset. Empty = score all unscored pending targets."""
+
+    target_ids: list[int] = Field(default_factory=list)
+
+
+class TargetScoreItem(BaseModel):
+    target_id: int
+    score: int
+    reasoning: str
+
+
+class TargetScoreResponse(BaseModel):
+    scored: list[TargetScoreItem]
+    cost_usd: float
+
+
+class TargetClusterRequest(BaseModel):
+    """Cluster approved targets. Empty `target_ids` = all approved."""
+
+    target_ids: list[int] = Field(default_factory=list)
+
+
+class TargetClusterGroup(BaseModel):
+    list_name: str
+    target_ids: list[int]
+
+
+class TargetClusterResponse(BaseModel):
+    lists: list[TargetClusterGroup]
+    cost_usd: float
+
+
+class TargetBulkReviewRequest(BaseModel):
+    target_ids: list[int]
+    review_status: TargetReviewStatus
 
 
 # ---------- Post ----------

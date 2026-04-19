@@ -25,9 +25,10 @@ type PublishMsg = {
 };
 
 type ListGroupsMsg = { type: "list_groups" };
+type ListSuggestedMsg = { type: "list_suggested_groups" };
 type SmokeMsg = { type: "smoke" };
 
-type Msg = PublishMsg | ListGroupsMsg | SmokeMsg;
+type Msg = PublishMsg | ListGroupsMsg | ListSuggestedMsg | SmokeMsg;
 
 chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
   (async () => {
@@ -40,6 +41,11 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
         }
         case "list_groups": {
           const groups = await listGroups();
+          sendResponse({ ok: true, groups });
+          break;
+        }
+        case "list_suggested_groups": {
+          const groups = await listSuggestedGroups();
           sendResponse({ ok: true, groups });
           break;
         }
@@ -309,6 +315,19 @@ async function attachImage(imageUrl: string): Promise<void> {
 
 // ---------- List groups ----------
 
+function parseMemberCount(text: string): number | null {
+  // FB renders "12K members", "1,234 участников", "2.4M members", etc.
+  const m = text.match(/([\d.,]+)\s*([KkMm])?/);
+  if (!m) return null;
+  const raw = m[1].replace(/,/g, "");
+  const n = parseFloat(raw);
+  if (Number.isNaN(n)) return null;
+  const suffix = (m[2] || "").toLowerCase();
+  if (suffix === "k") return Math.round(n * 1000);
+  if (suffix === "m") return Math.round(n * 1_000_000);
+  return Math.round(n);
+}
+
 async function listGroups(): Promise<
   Array<{ url: string; name: string; role?: string }>
 > {
@@ -331,6 +350,82 @@ async function listGroups(): Promise<
     results.push({ url, name: text });
   }
   return results;
+}
+
+// ---------- Suggested groups ----------
+
+type ScrapedSuggestedGroup = {
+  url: string;
+  external_id: string;
+  name: string;
+  member_count?: number;
+  description?: string;
+  category?: string;
+};
+
+async function listSuggestedGroups(): Promise<ScrapedSuggestedGroup[]> {
+  // FB's discover page lazy-loads — scroll a few times to pull in more cards.
+  for (let i = 0; i < 6; i++) {
+    window.scrollBy({ top: window.innerHeight, behavior: "instant" as ScrollBehavior });
+    await sleep(700);
+  }
+
+  // Each card tends to have a heading-link to the group, a member count line,
+  // and (sometimes) a description paragraph. We key off the anchor to
+  // `/groups/<id>/` inside the main discovery area.
+  const anchors = document.querySelectorAll<HTMLAnchorElement>(
+    'a[href*="/groups/"][role="link"]',
+  );
+  const byUrl = new Map<string, ScrapedSuggestedGroup>();
+
+  for (const a of anchors) {
+    const m = a.href.match(/\/groups\/([^/?#]+)\/?/);
+    if (!m) continue;
+    const slug = m[1];
+    if (/^(joins|feed|search|create|discover)$/.test(slug)) continue;
+    const url = `https://www.facebook.com/groups/${slug}`;
+
+    const name = (a.textContent || "").trim();
+    if (!name || name.length < 2 || name.length > 200) continue;
+
+    // Climb to the closest card container to grab member_count + description.
+    const card =
+      a.closest<HTMLElement>('[role="article"], [data-visualcompletion="ignore-dynamic"]') ??
+      a.parentElement?.parentElement ??
+      null;
+
+    let member_count: number | undefined;
+    let description: string | undefined;
+    if (card) {
+      const text = card.innerText || "";
+      const lines = text
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        if (!member_count && /member|участник|miembro|mitglied/i.test(line)) {
+          const parsed = parseMemberCount(line);
+          if (parsed != null) member_count = parsed;
+        }
+        if (!description && line.length > 40 && line !== name) {
+          description = line.slice(0, 500);
+        }
+      }
+    }
+
+    const existing = byUrl.get(url);
+    if (!existing || (!existing.description && description)) {
+      byUrl.set(url, {
+        url,
+        external_id: url,
+        name,
+        member_count,
+        description,
+      });
+    }
+  }
+
+  return [...byUrl.values()];
 }
 
 // ---------- Smoke test (popup-triggered) ----------
