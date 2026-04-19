@@ -117,6 +117,9 @@ _PUBLIC_PATHS = {
     "/api/auth/login",
     "/api/auth/status",
     "/api/meta/oauth/callback",  # Meta redirects hit this directly
+    # iCal feed — calendar apps can't send PIN cookies/headers, so this
+    # endpoint enforces its own HMAC-derived token check instead.
+    "/api/calendar.ics",
 }
 
 # Path prefixes that bypass auth.
