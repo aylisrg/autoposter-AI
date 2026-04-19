@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     # The Threads user id (numeric).
     threads_user_id: str = ""
 
+    # Phase 5d — LinkedIn OAuth.
+    # Values come from https://www.linkedin.com/developers/apps. Scopes we
+    # request: `openid profile email w_member_social`. For company-page
+    # posting, add `w_organization_social` and wire target URN separately.
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    linkedin_redirect_uri: str = "http://localhost:8787/api/linkedin/oauth/callback"
+
     # M8 — Security
     # Empty = auth disabled (single-user localhost default). Set to any
     # 4–32 char string to require `X-Dashboard-Pin` or a `/api/auth/login`

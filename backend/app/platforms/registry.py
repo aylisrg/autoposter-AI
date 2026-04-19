@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.platforms.base import Platform
 from app.platforms.facebook import FacebookPlatform
 from app.platforms.instagram import InstagramPlatform
+from app.platforms.linkedin import LinkedInPlatform
 from app.platforms.threads import ThreadsPlatform
 
 
@@ -21,6 +22,7 @@ PLATFORMS: dict[str, type[Platform]] = {
     "facebook": FacebookPlatform,
     "instagram": InstagramPlatform,
     "threads": ThreadsPlatform,
+    "linkedin": LinkedInPlatform,
 }
 
 
