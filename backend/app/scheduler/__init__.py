@@ -31,6 +31,7 @@ class SchedulerSingleton:
         # Late import: jobs.py imports models, which require db init first.
         from app.scheduler.jobs import (
             collect_metrics_tick,
+            daily_backup_tick,
             publish_due_posts,
             weekly_analyst_tick,
         )
@@ -66,8 +67,20 @@ class SchedulerSingleton:
             coalesce=True,
             max_instances=1,
         )
+        # Daily backup (M8) — 03:00 UTC.
+        self._impl.add_job(
+            daily_backup_tick,
+            trigger="cron",
+            hour=3,
+            minute=0,
+            id="daily_backup",
+            coalesce=True,
+            max_instances=1,
+        )
         self._impl.start()
-        log.info("Scheduler started (tick = 30s, metrics hourly, analyst Sun 21:00)")
+        log.info(
+            "Scheduler started (publish 30s, metrics 1h, analyst Sun 21:00, backup 03:00)"
+        )
 
     def shutdown(self, wait: bool = False) -> None:
         if self._impl is None:

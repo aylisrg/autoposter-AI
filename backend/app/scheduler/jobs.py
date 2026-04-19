@@ -211,6 +211,16 @@ async def collect_metrics_tick() -> None:
         db.close()
 
 
+async def daily_backup_tick() -> None:
+    """Daily zip backup (SQLite + media) to `settings.backup_dir`."""
+    from app.services import backups
+
+    try:
+        await asyncio.to_thread(backups.run_backup)
+    except Exception:
+        log.exception("daily_backup_tick crashed")
+
+
 async def weekly_analyst_tick() -> None:
     """Weekly Analyst run. No-op if profile or fresh metrics are missing."""
     from datetime import timedelta

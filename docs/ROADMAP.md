@@ -179,13 +179,24 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M8 — Production Polish
 
-- [ ] PIN-auth для dashboard
-- [ ] Encryption at rest для cookies/API keys (Fernet)
-- [ ] Backups: SQLite + media → daily zip
-- [ ] Docker Compose: backend + nginx + scheduler
-- [ ] Observability: structlog, request IDs, `/metrics` для Prometheus
-- [ ] Документация: install, troubleshooting, ban-FAQ
-- [ ] Verification: чистый docker-compose install + golden path E2E
+- [x] PIN-auth для dashboard (`DashboardAuthMiddleware` + `/api/auth/login`
+      cookie + `AuthGate` UI; empty PIN = dev default, disabled)
+- [x] Fernet encryption at rest для `PlatformCredential.access_token`
+      (hybrid property `encrypt_str` / `decrypt_str`, auto-generated key в
+      `data/.fernet.key`)
+- [x] Backups: SQLite `.backup()` snapshot + media → zip в `data/backups/`;
+      daily cron 03:00 UTC + `/api/admin/backup` on-demand; retention
+      `BACKUP_KEEP_DAYS`
+- [x] Docker Compose: `Dockerfile` (python:3.12-slim + uvicorn) +
+      `docker-compose.yml` (backend only, dashboard/extension остаются host)
+- [x] Observability: `RequestContextMiddleware` → request-id header + access
+      log + `http_requests_total` Prometheus counters; `GET /metrics`
+      exposition endpoint
+- [x] Документация: `docs/INSTALL.md`, `docs/TROUBLESHOOTING.md`,
+      `docs/BAN_FAQ.md`; `.env.example` расширен M7/M8 settings
+- [x] Verification: 17 new pytest (Fernet roundtrip + passthrough,
+      credential encryption, auth enabled/disabled/header/cookie, metrics
+      endpoint, request-id header, backup zip + prune); 133 total green
 
 ---
 

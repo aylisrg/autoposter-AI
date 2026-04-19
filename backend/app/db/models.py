@@ -541,8 +541,10 @@ class PlatformCredential(Base):
     App, so in practice one long-lived token serves both). For later
     platforms (LinkedIn, X, Reddit) the same shape works.
 
-    Storage: plaintext for v1; M8 adds Fernet-at-rest encryption to
-    `access_token`.
+    Storage: M8 adds Fernet-at-rest encryption to `access_token`. The column
+    is named `access_token_encrypted` on disk; the `access_token` property
+    transparently encrypts on write and decrypts on read. Old plaintext rows
+    (pre-M8) still work — decrypt_str returns them as-is.
     """
 
     __tablename__ = "platform_credentials"
@@ -551,13 +553,25 @@ class PlatformCredential(Base):
     platform_id: Mapped[str] = mapped_column(String(50), index=True)
     account_id: Mapped[str] = mapped_column(String(100))
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    access_token: Mapped[str] = mapped_column(Text)
+    access_token_encrypted: Mapped[str] = mapped_column("access_token", Text)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     extra: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+    @property
+    def access_token(self) -> str:
+        from app.security import decrypt_str
+
+        return decrypt_str(self.access_token_encrypted)
+
+    @access_token.setter
+    def access_token(self, value: str) -> None:
+        from app.security import encrypt_str
+
+        self.access_token_encrypted = encrypt_str(value)
 
 
 class FewShotExample(Base):

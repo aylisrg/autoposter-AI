@@ -125,6 +125,7 @@ async function request<T>(
 ): Promise<T> {
   const url = path.startsWith("http") ? path : `${BASE}${path}`;
   const resp = await fetch(url, {
+    credentials: "include",  // send/receive dashboard_session cookie
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -826,5 +827,24 @@ export const listPlatformCredentials = () =>
 
 export const deletePlatformCredential = (id: number) =>
   request<void>(`/api/platform-credentials/${id}`, { method: "DELETE" });
+
+// ---------- M8: Auth ----------
+
+export interface AuthStatus {
+  auth_required: boolean;
+  authenticated: boolean;
+}
+
+export const getAuthStatus = () =>
+  request<AuthStatus>("/api/auth/status");
+
+export const login = (pin: string) =>
+  request<AuthStatus>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ pin }),
+  });
+
+export const logout = () =>
+  request<AuthStatus>("/api/auth/logout", { method: "POST" });
 
 export { ApiError };

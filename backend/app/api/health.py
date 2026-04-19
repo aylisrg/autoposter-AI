@@ -45,3 +45,12 @@ def status(db: Session = Depends(get_session)) -> StatusOut:
         next_scheduled_post_at=next_post.scheduled_for if next_post else None,
         pending_posts=pending,
     )
+
+
+@router.post("/api/admin/backup")
+def run_backup_now() -> dict:
+    """Trigger an on-demand backup (the scheduler also runs one at 03:00 UTC)."""
+    from app.services import backups
+
+    path = backups.run_backup()
+    return {"ok": True, "path": str(path), "size_bytes": path.stat().st_size}

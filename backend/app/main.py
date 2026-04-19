@@ -15,14 +15,16 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api import api_router
 from app.config import settings
 from app.db import init_db
+from app.observability import RequestContextMiddleware, render_prometheus
 from app.scheduler import scheduler
+from app.security import DashboardAuthMiddleware
 from app.ws.extension_bridge import bridge
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
@@ -54,6 +56,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Request IDs + access log + counters (runs after CORS since middlewares
+# register LIFO).
+app.add_middleware(RequestContextMiddleware)
+# PIN auth — no-op when DASHBOARD_PIN is empty (dev default).
+app.add_middleware(DashboardAuthMiddleware)
 
 # Serve generated images and user uploads
 images_dir = Path("data/images")
@@ -63,6 +70,15 @@ uploads_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory="data"), name="static")
 
 app.include_router(api_router)
+
+
+@app.get("/metrics", include_in_schema=False)
+def prometheus_metrics() -> Response:
+    """Prometheus scrape endpoint. Plain text exposition format."""
+    return Response(
+        content=render_prometheus(),
+        media_type="text/plain; version=0.0.4",
+    )
 
 
 @app.websocket("/ws/ext")

@@ -51,5 +51,18 @@ class Settings(BaseSettings):
     # The Threads user id (numeric).
     threads_user_id: str = ""
 
+    # M8 — Security
+    # Empty = auth disabled (single-user localhost default). Set to any
+    # 4–32 char string to require `X-Dashboard-Pin` or a `/api/auth/login`
+    # cookie on every /api/* request.
+    dashboard_pin: str = ""
+    # Fernet key for encryption-at-rest (44-char urlsafe base64). Empty = we
+    # auto-generate one into `data/.fernet.key` and use that.
+    fernet_key: str = ""
+
+    # M8 — Backups
+    backup_dir: str = "data/backups"
+    backup_keep_days: int = 14
+
 
 settings = Settings()
