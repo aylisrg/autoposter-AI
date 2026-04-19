@@ -73,3 +73,34 @@ class FacebookPlatform(Platform):
             error=response.get("error", "Unknown error from extension"),
             raw=response,
         )
+
+    async def fetch_metrics(self, external_post_id: str) -> dict | None:
+        """Ask the extension to scrape likes/comments/shares from a post URL.
+
+        external_post_id is the full permalink we captured during publish. The
+        extension opens the page (or reuses an existing tab) and scrapes the
+        reaction / comment / share counters.
+        """
+        if not external_post_id or not external_post_id.startswith("http"):
+            return None
+        request_id = uuid.uuid4().hex
+        try:
+            response = await bridge.request(
+                {
+                    "type": "fetch_metrics",
+                    "request_id": request_id,
+                    "post_url": external_post_id,
+                },
+                timeout=60,
+            )
+        except TimeoutError:
+            return None
+        if not response.get("ok"):
+            return None
+        m = response.get("metrics", {})
+        return {
+            "likes": int(m.get("likes") or 0),
+            "comments": int(m.get("comments") or 0),
+            "shares": int(m.get("shares") or 0),
+            "reach": m.get("reach"),
+        }

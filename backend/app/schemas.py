@@ -15,9 +15,11 @@ from app.db.models import (
     FeedbackRating,
     Length,
     MediaKind,
+    MetricsWindow,
     PlanStatus,
     PostStatus,
     PostType,
+    ProposalStatus,
     SessionHealthStatus,
     SlotStatus,
     TargetReviewStatus,
@@ -489,3 +491,77 @@ class PostRegenerateRequest(BaseModel):
 class PostApproveAllRequest(BaseModel):
     post_type: PostType | None = None
     scheduled_for: datetime | None = None
+
+
+# ---------- Analytics & Analyst (M6) ----------
+
+
+class PostMetricsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    variant_id: int
+    window: MetricsWindow
+    likes: int
+    comments: int
+    shares: int
+    reach: int | None
+    engagement_score: float
+    collected_at: datetime
+
+
+class MetricsCollectResult(BaseModel):
+    variants_touched: int
+    rows_created: int
+
+
+class AnalyticsSummaryOut(BaseModel):
+    period_days: int
+    posts: int
+    likes: int
+    comments: int
+    shares: int
+    avg_engagement_score: float
+
+
+class TopPerformerOut(BaseModel):
+    post_id: int
+    post_type: PostType
+    posted_at: datetime | None
+    text_preview: str
+    engagement_score: float
+
+
+class AnalystReportOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    period_start: datetime
+    period_end: datetime
+    summary: str
+    body: dict
+    cost_usd: float
+    model: str
+    created_at: datetime
+
+
+class AnalystGenerateRequest(BaseModel):
+    days: int | None = 7
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+
+
+class OptimizerProposalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    report_id: int | None
+    field: str
+    current_value: dict
+    proposed_value: dict
+    reasoning: str
+    confidence: float
+    status: ProposalStatus
+    auto_applied: bool
+    applied_at: datetime | None
+    created_at: datetime

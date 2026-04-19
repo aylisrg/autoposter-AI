@@ -448,3 +448,106 @@ class SessionHealth(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+# ---------- M6: Metrics / Analyst / Optimizer ----------
+
+
+class MetricsWindow(str, enum.Enum):
+    """When after posting we took the snapshot. Fixed buckets keep comparison fair."""
+
+    ONE_HOUR = "1h"
+    ONE_DAY = "24h"
+    SEVEN_DAY = "7d"
+
+
+class PostMetrics(Base):
+    """One row per (variant, window). Scheduler fills these in over the lifespan
+    of a posted variant (1h, 24h, 7d).
+    """
+
+    __tablename__ = "post_metrics"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    variant_id: Mapped[int] = mapped_column(
+        ForeignKey("post_variants.id", ondelete="CASCADE"), index=True
+    )
+    window: Mapped[MetricsWindow] = mapped_column(Enum(MetricsWindow))
+    likes: Mapped[int] = mapped_column(Integer, default=0)
+    comments: Mapped[int] = mapped_column(Integer, default=0)
+    shares: Mapped[int] = mapped_column(Integer, default=0)
+    reach: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Computed engagement score = likes + 2*comments + 3*shares (shares weigh most)
+    engagement_score: Mapped[float] = mapped_column(Float, default=0.0)
+    collected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AnalystReport(Base):
+    """Weekly AI-generated report. The Analyst agent writes a structured JSON
+    body (top/bottom performers, patterns, hypotheses) — we store it verbatim
+    plus short summary text for the dashboard overview.
+    """
+
+    __tablename__ = "analyst_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime)
+    period_end: Mapped[datetime] = mapped_column(DateTime)
+    summary: Mapped[str] = mapped_column(Text)
+    body: Mapped[dict] = mapped_column(JSON, default=dict)
+    cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    model: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ProposalStatus(str, enum.Enum):
+    PENDING = "pending"
+    APPLIED = "applied"
+    REJECTED = "rejected"
+
+
+class OptimizerProposal(Base):
+    """A single mutation proposal (field = new value) emitted by the Analyst.
+
+    Minor changes (posting window +/- 1h, small ratio shifts) can be auto-applied
+    if `confidence >= 0.75`. Tone / length / big ratio shifts always wait for
+    human approval.
+    """
+
+    __tablename__ = "optimizer_proposals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_id: Mapped[int | None] = mapped_column(
+        ForeignKey("analyst_reports.id", ondelete="SET NULL"), nullable=True
+    )
+    # Dot-path on BusinessProfile, e.g. "post_type_ratios", "posting_window_start_hour".
+    field: Mapped[str] = mapped_column(String(100))
+    current_value: Mapped[dict] = mapped_column(JSON, default=dict)
+    proposed_value: Mapped[dict] = mapped_column(JSON, default=dict)
+    reasoning: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float, default=0.5)
+    status: Mapped[ProposalStatus] = mapped_column(
+        Enum(ProposalStatus), default=ProposalStatus.PENDING
+    )
+    auto_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class FewShotExample(Base):
+    """Curated top-performing posts used as few-shot examples for Writer.
+
+    Refreshed periodically from PostMetrics — the N highest-engagement posts per
+    post_type stay in the store; others rotate out.
+    """
+
+    __tablename__ = "few_shot_examples"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    post_id: Mapped[int] = mapped_column(
+        ForeignKey("posts.id", ondelete="CASCADE"), index=True
+    )
+    post_type: Mapped[PostType] = mapped_column(Enum(PostType), index=True)
+    text: Mapped[str] = mapped_column(Text)
+    engagement_score: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

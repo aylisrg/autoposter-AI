@@ -660,4 +660,127 @@ export const addBlackout = (payload: { date: string; reason?: string | null }) =
 export const deleteBlackout = (id: number) =>
   request<void>(`/api/humanizer/blackout-dates/${id}`, { method: "DELETE" });
 
+// ---------- Analytics / Analyst / Optimizer (M6) ----------
+
+export type MetricsWindow = "1h" | "24h" | "7d";
+
+export interface PostMetricsEntry {
+  id: number;
+  variant_id: number;
+  window: MetricsWindow;
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number | null;
+  engagement_score: number;
+  collected_at: string;
+}
+
+export interface AnalyticsSummary {
+  period_days: number;
+  posts: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  avg_engagement_score: number;
+}
+
+export interface TopPerformer {
+  post_id: number;
+  post_type: PostType;
+  posted_at: string | null;
+  text_preview: string;
+  engagement_score: number;
+}
+
+export interface AnalystReport {
+  id: number;
+  period_start: string;
+  period_end: string;
+  summary: string;
+  body: {
+    summary?: string;
+    top_performers?: Array<{ post_id: number; why: string }>;
+    bottom_performers?: Array<{ post_id: number; why: string }>;
+    patterns?: string[];
+    proposals?: Array<{
+      field: string;
+      current_value: unknown;
+      proposed_value: unknown;
+      reasoning: string;
+      confidence: number;
+    }>;
+  };
+  cost_usd: number;
+  model: string;
+  created_at: string;
+}
+
+export type ProposalStatus = "pending" | "applied" | "rejected";
+
+export interface OptimizerProposal {
+  id: number;
+  report_id: number | null;
+  field: string;
+  current_value: Record<string, unknown>;
+  proposed_value: Record<string, unknown>;
+  reasoning: string;
+  confidence: number;
+  status: ProposalStatus;
+  auto_applied: boolean;
+  applied_at: string | null;
+  created_at: string;
+}
+
+export const getMetricsForPost = (postId: number) =>
+  request<PostMetricsEntry[]>(`/api/metrics/post/${postId}`);
+
+export const collectMetricsNow = () =>
+  request<{ variants_touched: number; rows_created: number }>(
+    "/api/metrics/collect",
+    { method: "POST" },
+  );
+
+export const getAnalyticsSummary = (days = 7) =>
+  request<AnalyticsSummary>(`/api/analytics/summary?days=${days}`);
+
+export const getTopPerformers = (days = 7, limit = 5, reverse = false) =>
+  request<TopPerformer[]>(
+    `/api/analytics/top-performers?days=${days}&limit=${limit}&reverse=${reverse}`,
+  );
+
+export const listAnalystReports = () =>
+  request<AnalystReport[]>("/api/analyst/reports");
+
+export const getAnalystReport = (id: number) =>
+  request<AnalystReport>(`/api/analyst/reports/${id}`);
+
+export const generateAnalystReport = (payload: {
+  days?: number;
+  period_start?: string;
+  period_end?: string;
+} = {}) =>
+  request<AnalystReport>("/api/analyst/generate", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const listProposals = (status?: ProposalStatus) => {
+  const q = status ? `?status=${status}` : "";
+  return request<OptimizerProposal[]>(`/api/optimizer/proposals${q}`);
+};
+
+export const applyProposal = (id: number) =>
+  request<OptimizerProposal>(`/api/optimizer/proposals/${id}/apply`, {
+    method: "POST",
+  });
+
+export const rejectProposal = (id: number) =>
+  request<OptimizerProposal>(`/api/optimizer/proposals/${id}/reject`, {
+    method: "POST",
+  });
+
+export const refreshFewShotStore = () =>
+  request<{ inserted: number }>("/api/few-shot/refresh", { method: "POST" });
+
 export { ApiError };

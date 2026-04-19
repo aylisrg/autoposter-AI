@@ -29,7 +29,11 @@ class SchedulerSingleton:
             log.warning("Scheduler already running; skipping start")
             return
         # Late import: jobs.py imports models, which require db init first.
-        from app.scheduler.jobs import publish_due_posts
+        from app.scheduler.jobs import (
+            collect_metrics_tick,
+            publish_due_posts,
+            weekly_analyst_tick,
+        )
 
         self._impl = AsyncIOScheduler(timezone="UTC")
         self._impl.add_job(
@@ -41,8 +45,29 @@ class SchedulerSingleton:
             max_instances=1,
             next_run_time=datetime.utcnow(),
         )
+        # Metrics collection (M6) — hourly, best effort.
+        self._impl.add_job(
+            collect_metrics_tick,
+            trigger="interval",
+            hours=1,
+            id="collect_metrics",
+            coalesce=True,
+            max_instances=1,
+        )
+        # Weekly Analyst (M6) — Sundays at 21:00 UTC. A no-op if profile or
+        # metrics are missing.
+        self._impl.add_job(
+            weekly_analyst_tick,
+            trigger="cron",
+            day_of_week="sun",
+            hour=21,
+            minute=0,
+            id="weekly_analyst",
+            coalesce=True,
+            max_instances=1,
+        )
         self._impl.start()
-        log.info("Scheduler started (tick = 30s)")
+        log.info("Scheduler started (tick = 30s, metrics hourly, analyst Sun 21:00)")
 
     def shutdown(self, wait: bool = False) -> None:
         if self._impl is None:

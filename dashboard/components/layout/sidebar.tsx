@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
+  BarChart3,
   Calendar,
   CalendarDays,
   CheckSquare,
@@ -23,6 +24,7 @@ const NAV = [
   { href: "/compose", label: "Compose", icon: PenSquare },
   { href: "/review", label: "Review", icon: CheckSquare },
   { href: "/queue", label: "Queue", icon: ListChecks },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/humanizer", label: "Humanizer", icon: ShieldCheck },
 ];
 

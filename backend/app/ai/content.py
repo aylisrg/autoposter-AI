@@ -86,7 +86,18 @@ def _scrub(text: str) -> tuple[str, bool]:
 
 
 def _fetch_few_shot_examples(db: Session, post_type: PostType, limit: int = 3) -> list[str]:
-    """Get top N thumbs-up posts of the same type for few-shot injection."""
+    """Few-shot examples for the Writer.
+
+    Prefers the engagement-ranked store curated by the Analyst (M6). If empty
+    (nothing posted yet, or metrics haven't been collected), fall back to
+    thumbs-up-rated posts of the same type — M0/M1 behaviour.
+    """
+    from app.services.few_shot import fetch_few_shot_examples as fetch_engagement_examples
+
+    engagement = fetch_engagement_examples(db, post_type, limit=limit)
+    if engagement:
+        return engagement
+
     rows = (
         db.query(Post)
         .join(Post.feedback)

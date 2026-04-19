@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 
 from app.api import (
+    analytics,
     business_profile,
     feedback,
     health,
@@ -21,5 +22,6 @@ api_router.include_router(plans.router)
 api_router.include_router(feedback.router)
 api_router.include_router(media.router)
 api_router.include_router(humanizer.router)
+api_router.include_router(analytics.router)
 
 __all__ = ["api_router"]

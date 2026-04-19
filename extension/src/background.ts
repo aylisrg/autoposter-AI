@@ -62,11 +62,29 @@ async function routeCommand(msg: Record<string, unknown>): Promise<Record<string
       return await handleListGroups(msg);
     case "list_suggested_groups":
       return await handleListSuggestedGroups(msg);
+    case "fetch_metrics":
+      return await handleFetchMetrics(msg);
     case "ping":
       return { pong: true };
     default:
       throw new Error(`Unknown command: ${type}`);
   }
+}
+
+async function handleFetchMetrics(
+  msg: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const postUrl = msg.post_url as string;
+  if (!postUrl) throw new Error("post_url required");
+  const tab = await openOrFocusFacebookTab(postUrl);
+  if (!tab.id) throw new Error("Could not obtain tab id");
+  // Facebook's permalink pages need a beat to render reaction/comment counters.
+  await sleep(3500);
+  const response = await chrome.tabs.sendMessage(tab.id, {
+    type: "fetch_metrics",
+  });
+  if (!response?.ok) throw new Error(response?.error || "failed to fetch metrics");
+  return { metrics: response.metrics };
 }
 
 async function handlePublish(msg: Record<string, unknown>): Promise<Record<string, unknown>> {

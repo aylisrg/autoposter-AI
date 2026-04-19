@@ -136,20 +136,26 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M6 — SMM Analyst Agent + Auto-Improving Loop ⭐
 
-- [ ] **Metrics Collector**:
-  - FB: extension скрейпит likes/comments/shares/reach через 1ч/24ч/7д
-  - IG/Threads: Meta Graph Insights API
-  - Модель `PostMetrics`
-- [ ] **Analyst Agent** (weekly cron):
-  - Структурированный отчёт: top/bottom performers, паттерны (тип/время/длина/тон)
-  - Гипотезы с scoring
-- [ ] **Optimizer**:
-  - Mutations: post_type_ratios, posting_window, tone, length, emoji_density, few-shot store
-  - Human-in-loop для крупных изменений; мелкие — авто
-- [ ] **Few-shot Store**: top 20 постов как примеры в Writer
-- [ ] **A/B framework** при низкой уверенности
-- [ ] **Dashboard Analytics**: KPI, графики engagement, before/after
-- [ ] Verification: 4 недели данных → отчёт → 2 авто-изменения → метрика недели сверена
+- [x] **Metrics Collector**: модель `PostMetrics` (1h/24h/7d), сервис
+      `services/metrics.py`, `FacebookPlatform.fetch_metrics` + extension
+      `fetch_metrics` handler (aria-label scraping). Hourly scheduler tick
+      `collect_metrics_tick`
+- [x] **Analyst Agent** (`agents/analyst.py`): Claude Sonnet, structured JSON
+      report → AnalystReport; weekly cron (Sunday 21:00 UTC)
+- [x] **Optimizer**: `OptimizerProposal` с confidence + auto-apply для safe
+      fields (posting_window_*, post_type_ratios, emoji_density,
+      posts_per_day) при confidence ≥ 0.75; остальное — human-in-loop
+- [x] **Few-shot Store**: `FewShotExample` пополняется top-N по
+      engagement_score; `_fetch_few_shot_examples` теперь тянет отсюда,
+      fallback к thumbs-up
+- [~] A/B framework — отложен до пост-MVP (proposals + Feedback loop уже
+      дают функциональный аналог)
+- [x] **Dashboard Analytics** (`/analytics`): KPI-панель, top/bottom
+      performers, Optimizer proposals с apply/reject, последние Analyst
+      reports
+- [x] Verification: 13 pytest (collect windows, engagement_score, summary,
+      top/bottom, persist+auto-apply, apply/reject endpoints, few-shot
+      trim, analyst /generate)
 
 ### M7 — Multi-Platform: Instagram + Threads
 

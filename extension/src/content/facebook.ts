@@ -49,9 +49,15 @@ type PublishMsg = {
 
 type ListGroupsMsg = { type: "list_groups" };
 type ListSuggestedMsg = { type: "list_suggested_groups" };
+type FetchMetricsMsg = { type: "fetch_metrics" };
 type SmokeMsg = { type: "smoke" };
 
-type Msg = PublishMsg | ListGroupsMsg | ListSuggestedMsg | SmokeMsg;
+type Msg =
+  | PublishMsg
+  | ListGroupsMsg
+  | ListSuggestedMsg
+  | FetchMetricsMsg
+  | SmokeMsg;
 
 chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
   (async () => {
@@ -70,6 +76,11 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
         case "list_suggested_groups": {
           const groups = await listSuggestedGroups();
           sendResponse({ ok: true, groups });
+          break;
+        }
+        case "fetch_metrics": {
+          const metrics = await scrapePostMetrics();
+          sendResponse({ ok: true, metrics });
           break;
         }
         case "smoke": {
@@ -456,6 +467,90 @@ async function listSuggestedGroups(): Promise<ScrapedSuggestedGroup[]> {
   }
 
   return [...byUrl.values()];
+}
+
+// ---------- Post metrics scraping ----------
+
+type ScrapedMetrics = {
+  likes: number;
+  comments: number;
+  shares: number;
+  reach: number | null;
+};
+
+function parseCount(text: string): number | null {
+  if (!text) return null;
+  // Strip commas; match the first number with optional K/M suffix.
+  const m = text.match(/([\d.,]+)\s*([KkMm])?/);
+  if (!m) return null;
+  const raw = m[1].replace(/,/g, "");
+  const n = parseFloat(raw);
+  if (Number.isNaN(n)) return null;
+  const suffix = (m[2] || "").toLowerCase();
+  if (suffix === "k") return Math.round(n * 1000);
+  if (suffix === "m") return Math.round(n * 1_000_000);
+  return Math.round(n);
+}
+
+/**
+ * Scrape engagement counters off a permalink page.
+ *
+ * FB constantly reshuffles markup, so we look for any of:
+ * - `aria-label` strings matching "123 reactions", "12 comments", "3 shares"
+ * - role="button" elements whose text starts with digits + "comments/shares"
+ *
+ * We return zeros for things we couldn't find (rather than throwing) — the
+ * backend records a sparse row and tries again next window.
+ */
+async function scrapePostMetrics(): Promise<ScrapedMetrics> {
+  // Give the page one more beat for async counters to hydrate.
+  await sleep(800);
+
+  const result: ScrapedMetrics = {
+    likes: 0,
+    comments: 0,
+    shares: 0,
+    reach: null,
+  };
+
+  const labelPatterns: Array<{ key: keyof ScrapedMetrics; rx: RegExp }> = [
+    { key: "likes", rx: /(?:^|\s)([\d.,]+[KkMm]?)\s*(?:reactions?|likes?|reactions and|реакци|likes)/i },
+    { key: "comments", rx: /([\d.,]+[KkMm]?)\s*(?:comments?|комментари|comentarios?)/i },
+    { key: "shares", rx: /([\d.,]+[KkMm]?)\s*(?:shares?|поделились|compartidos?)/i },
+  ];
+
+  const allText = new Set<string>();
+  // aria-label carries the canonical counts on reaction/comment/share buttons.
+  document
+    .querySelectorAll<HTMLElement>("[aria-label]")
+    .forEach((el) => {
+      const v = el.getAttribute("aria-label");
+      if (v) allText.add(v);
+    });
+  // role=button / role=link elements often have the visible count as textContent.
+  document
+    .querySelectorAll<HTMLElement>('[role="button"], [role="link"], span')
+    .forEach((el) => {
+      const t = el.textContent?.trim() || "";
+      if (t && t.length < 80) allText.add(t);
+    });
+
+  for (const pattern of labelPatterns) {
+    for (const t of allText) {
+      const m = t.match(pattern.rx);
+      if (m) {
+        const n = parseCount(m[1]);
+        if (n !== null && n > result[pattern.key]) {
+          // Highest match wins — FB sometimes renders both "123" and "123 reactions"
+          // in different positions; we want the explicit count.
+          (result as unknown as Record<string, number>)[pattern.key] = n;
+          break;
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 // ---------- Smoke test (popup-triggered) ----------

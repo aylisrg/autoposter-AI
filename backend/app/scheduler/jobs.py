@@ -174,3 +174,56 @@ async def publish_due_posts() -> None:
                 break
     finally:
         db.close()
+
+
+# ---------- M6: Metrics + Analyst ticks ----------
+
+
+async def collect_metrics_tick() -> None:
+    """Hourly. Fetch whatever 1h/24h/7d windows are due across all POSTED variants."""
+    from app.services import metrics
+
+    db = SessionLocal()
+    try:
+        result = await metrics.collect_metrics(db)
+        if result["rows_created"]:
+            log.info(
+                "Metrics tick: touched %d variants, created %d rows",
+                result["variants_touched"],
+                result["rows_created"],
+            )
+    except Exception:
+        log.exception("collect_metrics_tick crashed")
+    finally:
+        db.close()
+
+
+async def weekly_analyst_tick() -> None:
+    """Weekly Analyst run. No-op if profile or fresh metrics are missing."""
+    from datetime import timedelta
+
+    from app.agents import analyst
+    from app.db.models import BusinessProfile, PostMetrics
+    from app.services import few_shot
+
+    db = SessionLocal()
+    try:
+        profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+        if profile is None:
+            log.info("weekly_analyst_tick: no profile, skipping")
+            return
+        has_metrics = db.query(PostMetrics.id).first() is not None
+        if not has_metrics:
+            log.info("weekly_analyst_tick: no metrics yet, skipping")
+            return
+        end = datetime.now(UTC)
+        start = end - timedelta(days=7)
+        # Heavy Claude call — dispatch to a thread.
+        output = await asyncio.to_thread(analyst.run_analysis, db, profile, start, end)
+        analyst.persist_report_and_proposals(db, profile, output, start, end)
+        few_shot.refresh_few_shot_store(db)
+        log.info("weekly_analyst_tick: generated report (cost=$%.4f)", output.cost_usd)
+    except Exception:
+        log.exception("weekly_analyst_tick crashed")
+    finally:
+        db.close()
