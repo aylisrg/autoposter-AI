@@ -51,8 +51,16 @@ class Platform(ABC):
         """
 
     @abstractmethod
-    async def publish(self, post: Post, target: Target) -> PublishResult:
-        """Post the given content to the target."""
+    async def publish(
+        self, post: Post, target: Target, humanizer: dict | None = None
+    ) -> PublishResult:
+        """Post the given content to the target.
+
+        `humanizer` is a JSON-serializable dict of per-character typing speed,
+        mistake rate, mouse curvature, idle-scroll durations, etc. Platforms
+        that use a browser (Chrome extension) forward it verbatim to the
+        content script; API-based platforms can ignore it.
+        """
 
     def adapt_content(self, text: str) -> str:
         """Platform-specific content tweaks.

@@ -43,7 +43,9 @@ class FacebookPlatform(Platform):
             for g in groups
         ]
 
-    async def publish(self, post: Post, target: Target) -> PublishResult:
+    async def publish(
+        self, post: Post, target: Target, humanizer: dict | None = None
+    ) -> PublishResult:
         """Send a publish command to the extension."""
         request_id = uuid.uuid4().hex
         payload = {
@@ -53,9 +55,10 @@ class FacebookPlatform(Platform):
             "text": post.text,
             "image_url": post.image_url,  # local URL served by backend /static
             "first_comment": post.first_comment,
+            "humanizer": humanizer,  # content script uses it to pace typing/mouse
         }
         try:
-            response = await bridge.request(payload, timeout=180)
+            response = await bridge.request(payload, timeout=240)
         except TimeoutError:
             return PublishResult(ok=False, error="Extension did not respond in time")
 

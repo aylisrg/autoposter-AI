@@ -532,4 +532,84 @@ export const generatePostFromSlot = (slotId: number) =>
     { method: "POST" },
   );
 
+// ---------- Humanizer (M4) ----------
+
+export type SessionHealthStatus =
+  | "healthy"
+  | "warning"
+  | "checkpoint"
+  | "shadow_ban_suspected"
+  | "paused";
+
+export interface HumanizerProfile {
+  id: number;
+  typing_wpm_min: number;
+  typing_wpm_max: number;
+  mistake_rate: number;
+  pause_between_sentences_ms_min: number;
+  pause_between_sentences_ms_max: number;
+  mouse_path_curvature: number;
+  idle_scroll_before_post_sec_min: number;
+  idle_scroll_before_post_sec_max: number;
+  schedule_jitter_minutes: number;
+  consecutive_failures_threshold: number;
+  smart_pause_minutes: number;
+  smart_pause_until: string | null;
+  smart_pause_reason: string | null;
+}
+
+export interface SessionHealth {
+  platform_id: string;
+  status: SessionHealthStatus;
+  consecutive_failures: number;
+  last_failure_at: string | null;
+  last_failure_reason: string | null;
+  last_success_at: string | null;
+}
+
+export interface SmartPauseInfo {
+  paused: boolean;
+  until: string | null;
+  reason: string | null;
+}
+
+export interface BlackoutDate {
+  id: number;
+  date: string;
+  reason: string | null;
+}
+
+export const getHumanizer = () =>
+  request<HumanizerProfile>("/api/humanizer/profile");
+
+export const patchHumanizer = (patch: Partial<HumanizerProfile>) =>
+  request<HumanizerProfile>("/api/humanizer/profile", {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+export const listSessionHealth = () =>
+  request<SessionHealth[]>("/api/humanizer/session-health");
+
+export const getPauseStatus = () =>
+  request<SmartPauseInfo>("/api/humanizer/pause");
+
+export const activatePause = () =>
+  request<SmartPauseInfo>("/api/humanizer/pause", { method: "POST" });
+
+export const resumeFromPause = () =>
+  request<SmartPauseInfo>("/api/humanizer/resume", { method: "POST" });
+
+export const listBlackouts = () =>
+  request<BlackoutDate[]>("/api/humanizer/blackout-dates");
+
+export const addBlackout = (payload: { date: string; reason?: string | null }) =>
+  request<BlackoutDate>("/api/humanizer/blackout-dates", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+export const deleteBlackout = (id: number) =>
+  request<void>(`/api/humanizer/blackout-dates/${id}`, { method: "DELETE" });
+
 export { ApiError };

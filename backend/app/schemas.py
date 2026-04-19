@@ -18,6 +18,7 @@ from app.db.models import (
     PlanStatus,
     PostStatus,
     PostType,
+    SessionHealthStatus,
     SlotStatus,
     TargetReviewStatus,
     Tone,
@@ -395,3 +396,69 @@ class SlotGeneratePostResponse(BaseModel):
 
     slot: PlanSlotOut
     post: PostOut
+
+
+# ---------- Humanizer (M4) ----------
+
+
+class HumanizerProfileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    typing_wpm_min: int
+    typing_wpm_max: int
+    mistake_rate: float
+    pause_between_sentences_ms_min: int
+    pause_between_sentences_ms_max: int
+    mouse_path_curvature: float
+    idle_scroll_before_post_sec_min: int
+    idle_scroll_before_post_sec_max: int
+    schedule_jitter_minutes: int
+    consecutive_failures_threshold: int
+    smart_pause_minutes: int
+    smart_pause_until: datetime | None
+    smart_pause_reason: str | None
+
+
+class HumanizerProfileIn(BaseModel):
+    typing_wpm_min: int | None = None
+    typing_wpm_max: int | None = None
+    mistake_rate: float | None = None
+    pause_between_sentences_ms_min: int | None = None
+    pause_between_sentences_ms_max: int | None = None
+    mouse_path_curvature: float | None = None
+    idle_scroll_before_post_sec_min: int | None = None
+    idle_scroll_before_post_sec_max: int | None = None
+    schedule_jitter_minutes: int | None = None
+    consecutive_failures_threshold: int | None = None
+    smart_pause_minutes: int | None = None
+
+
+class SessionHealthOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    platform_id: str
+    status: SessionHealthStatus
+    consecutive_failures: int
+    last_failure_at: datetime | None
+    last_failure_reason: str | None
+    last_success_at: datetime | None
+
+
+class SmartPauseInfo(BaseModel):
+    paused: bool
+    until: datetime | None
+    reason: str | None
+
+
+class BlackoutDateIn(BaseModel):
+    date: datetime
+    reason: str | None = None
+
+
+class BlackoutDateOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: datetime
+    reason: str | None

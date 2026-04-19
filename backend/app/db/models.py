@@ -369,3 +369,79 @@ class MediaAsset(Base):
     tagged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ---------- Humanizer (M4) ----------
+
+
+class HumanizerProfile(Base):
+    """Configuration for how "human" the posting simulation should feel.
+
+    Singleton for v1 (like BusinessProfile). Holds all tunable knobs: typing speed,
+    per-char variance, mistake/correction rate, mouse-path curvature, idle scroll
+    time before opening composer, and the jitter window for scheduled times.
+
+    ## Smart pause
+    `consecutive_failures_threshold` / `smart_pause_minutes` drive the
+    "3 fails in a row → cool down 2h" safety. Scheduler reads `smart_pause_until`
+    and skips all work while it's in the future.
+    """
+    __tablename__ = "humanizer_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Typing simulation (extension side)
+    typing_wpm_min: Mapped[int] = mapped_column(Integer, default=35)
+    typing_wpm_max: Mapped[int] = mapped_column(Integer, default=70)
+    mistake_rate: Mapped[float] = mapped_column(Float, default=0.02)  # 2% chars typo'd
+    pause_between_sentences_ms_min: Mapped[int] = mapped_column(Integer, default=250)
+    pause_between_sentences_ms_max: Mapped[int] = mapped_column(Integer, default=900)
+
+    # Mouse / scroll (extension side)
+    mouse_path_curvature: Mapped[float] = mapped_column(Float, default=0.35)
+    idle_scroll_before_post_sec_min: Mapped[int] = mapped_column(Integer, default=3)
+    idle_scroll_before_post_sec_max: Mapped[int] = mapped_column(Integer, default=12)
+
+    # Scheduling jitter (backend side)
+    schedule_jitter_minutes: Mapped[int] = mapped_column(Integer, default=7)
+
+    # Smart pause
+    consecutive_failures_threshold: Mapped[int] = mapped_column(Integer, default=3)
+    smart_pause_minutes: Mapped[int] = mapped_column(Integer, default=120)
+    smart_pause_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    smart_pause_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class SessionHealthStatus(str, enum.Enum):
+    HEALTHY = "healthy"
+    WARNING = "warning"          # >=1 failure but under threshold
+    CHECKPOINT = "checkpoint"    # FB asking for auth / captcha
+    SHADOW_BAN_SUSPECTED = "shadow_ban_suspected"
+    PAUSED = "paused"            # Smart pause is active
+
+
+class SessionHealth(Base):
+    """Per-platform running health counter. One row per platform_id.
+
+    Scheduler reads/writes this every tick. If status goes non-HEALTHY we stop
+    publishing for that platform and surface an alert in the dashboard status widget.
+    """
+    __tablename__ = "session_health"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    platform_id: Mapped[str] = mapped_column(String(50), unique=True)
+    status: Mapped[SessionHealthStatus] = mapped_column(
+        Enum(SessionHealthStatus), default=SessionHealthStatus.HEALTHY
+    )
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )

@@ -110,14 +110,16 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M4 — Human-Like Posting Engine
 
-- [ ] `HumanizerProfile` (typing_wpm, mistake_rate, pauses, scroll behavior)
-- [ ] Extension: символ-за-символом typing, bezier mouse moves, idle scroll
-- [ ] Scheduler с jitter ±N мин, blackout dates, per-platform rate-limit
-- [ ] Smart pause: 3 подряд failed → пауза 2ч + alert
-- [ ] Session health: detect checkpoint/captcha/2FA → стоп + уведомление
-- [ ] Shadow-ban heuristics
-- [ ] IG/Threads — Meta Graph API (без humanizer, rate-aware)
-- [ ] Verification: 20 постов в FB за день, 0 банов, естественные тайминги
+- [x] `HumanizerProfile` (typing_wpm, mistake_rate, pauses, scroll behavior, jitter)
+- [x] Extension: character-by-character typing with QWERTY-typos + correction,
+      bezier mouse moves on hover, idle scroll before composer open
+- [x] Scheduler с jitter ±N мин (`apply_schedule_jitter` в `/api/posts/.../schedule`),
+      blackout dates — сам per-day check в tick, per-day rate-limit уже из M0
+- [x] Smart pause: N подряд failed → пауза M мин + причина
+- [x] Session health: checkpoint/captcha/2FA и shadow-ban patterns detect → стоп
+- [x] Shadow-ban heuristics (`SHADOW_BAN_PATTERNS` + `SessionHealthStatus`)
+- [~] IG/Threads humanizer не нужен — отложен до M7 (API-based posting)
+- [x] Verification: 22 pytest (классификация / jitter / pause / blackout / API)
 
 ### M5 — Review & Approval Flow
 

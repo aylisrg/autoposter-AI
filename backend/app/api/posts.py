@@ -310,7 +310,11 @@ def schedule(
         if not target_ids:
             raise HTTPException(status_code=400, detail="No active targets. Add some first.")
 
-    post.scheduled_for = payload.scheduled_for
+    # Apply humanizer jitter so scheduled times don't look metronomic.
+    from app.services import humanizer as hz
+
+    humanizer_profile = hz.get_or_create_profile(db)
+    post.scheduled_for = hz.apply_schedule_jitter(payload.scheduled_for, humanizer_profile)
     profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
     _ensure_variants(
         db,

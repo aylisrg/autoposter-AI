@@ -10,6 +10,7 @@ import {
   Image as ImageIcon,
   ListChecks,
   PenSquare,
+  ShieldCheck,
   Users,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ const NAV = [
   { href: "/library", label: "Media Library", icon: ImageIcon },
   { href: "/compose", label: "Compose", icon: PenSquare },
   { href: "/queue", label: "Queue", icon: ListChecks },
+  { href: "/humanizer", label: "Humanizer", icon: ShieldCheck },
 ];
 
 export function Sidebar() {

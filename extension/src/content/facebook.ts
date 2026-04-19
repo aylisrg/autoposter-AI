@@ -17,11 +17,34 @@
  * - If we detect a "re-auth" / checkpoint / captcha dialog, throw { kind: "checkpoint" }.
  */
 
+type HumanizerConfig = {
+  typing_wpm_min: number;
+  typing_wpm_max: number;
+  mistake_rate: number;
+  pause_between_sentences_ms_min: number;
+  pause_between_sentences_ms_max: number;
+  mouse_path_curvature: number;
+  idle_scroll_before_post_sec_min: number;
+  idle_scroll_before_post_sec_max: number;
+};
+
+const DEFAULT_HUMANIZER: HumanizerConfig = {
+  typing_wpm_min: 35,
+  typing_wpm_max: 70,
+  mistake_rate: 0.02,
+  pause_between_sentences_ms_min: 250,
+  pause_between_sentences_ms_max: 900,
+  mouse_path_curvature: 0.35,
+  idle_scroll_before_post_sec_min: 3,
+  idle_scroll_before_post_sec_max: 12,
+};
+
 type PublishMsg = {
   type: "publish";
   text: string;
   image_url?: string | null;
   first_comment?: string | null;
+  humanizer?: HumanizerConfig | null;
 };
 
 type ListGroupsMsg = { type: "list_groups" };
@@ -122,6 +145,11 @@ async function publishPost(
   // 0. Fail fast if we're on a checkpoint / login screen.
   assertNotCheckpointed();
 
+  const hz: HumanizerConfig = { ...DEFAULT_HUMANIZER, ...(msg.humanizer || {}) };
+
+  // Warm-up: idle scroll before interacting — a human reads the feed first.
+  await humanIdleScroll(hz);
+
   // 1. Find the composer trigger ("Write something...").
   const trigger = await waitFor(() => findComposerTrigger(), 15000);
   if (!trigger) {
@@ -129,15 +157,16 @@ async function publishPost(
       `composer_trigger_not_found: locale=${detectLocale()} url=${location.pathname}`,
     );
   }
+  await humanHover(trigger, hz);
   simulateClick(trigger);
 
   // 2. Wait for the composer dialog + editor.
   const composer = await waitFor(() => findComposerEditor(), 10000);
   if (!composer) throw new Error("composer_editor_did_not_open");
 
-  // 3. Paste text via clipboard simulation (most robust against React).
+  // 3. Type text character-by-character with humanizer pacing.
   composer.focus();
-  await pasteText(composer, msg.text);
+  await humanType(composer, msg.text, hz);
 
   // 4. Attach image if provided.
   if (msg.image_url) {
@@ -147,7 +176,8 @@ async function publishPost(
   // 5. Click "Post".
   const postBtn = await waitFor(() => findPostButton(), 10000);
   if (!postBtn) throw new Error("post_button_not_found_or_disabled");
-  await sleep(600 + Math.random() * 900); // human-ish pause
+  await humanHover(postBtn, hz);
+  await sleep(600 + Math.random() * 900); // final hesitation
   simulateClick(postBtn);
 
   // 6. Wait for the composer to close as first success signal.
@@ -511,6 +541,168 @@ function waitFor<T>(
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function rand(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}
+
+function randInt(min: number, max: number): number {
+  return Math.floor(rand(min, max + 1));
+}
+
+// ---------- Humanizer helpers ----------
+
+async function humanIdleScroll(hz: HumanizerConfig): Promise<void> {
+  const durSec = rand(
+    hz.idle_scroll_before_post_sec_min,
+    hz.idle_scroll_before_post_sec_max,
+  );
+  const end = Date.now() + durSec * 1000;
+  while (Date.now() < end) {
+    // Small irregular scrolls, occasional pauses — mimics "reading".
+    window.scrollBy({
+      top: Math.random() < 0.15 ? -randInt(80, 250) : randInt(120, 420),
+      behavior: "smooth",
+    });
+    await sleep(randInt(600, 1800));
+  }
+}
+
+async function humanHover(target: HTMLElement, hz: HumanizerConfig): Promise<void> {
+  // Simulate a bezier-curve mouse approach without actually moving the OS
+  // cursor (we can't). We dispatch mousemove/mouseover events along the path,
+  // which is enough to unlock hover states / analytics FB relies on.
+  const rect = target.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
+
+  const endX = rect.left + rect.width / 2;
+  const endY = rect.top + rect.height / 2;
+  const startX = endX + (Math.random() - 0.5) * 400;
+  const startY = endY + (Math.random() - 0.5) * 400;
+  // Control points bend the path.
+  const curve = hz.mouse_path_curvature;
+  const cx = (startX + endX) / 2 + (Math.random() - 0.5) * 200 * curve;
+  const cy = (startY + endY) / 2 + (Math.random() - 0.5) * 200 * curve;
+
+  const steps = randInt(12, 28);
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    // Quadratic bezier
+    const x = (1 - t) * (1 - t) * startX + 2 * (1 - t) * t * cx + t * t * endX;
+    const y = (1 - t) * (1 - t) * startY + 2 * (1 - t) * t * cy + t * t * endY;
+    const evt = new MouseEvent("mousemove", {
+      clientX: x,
+      clientY: y,
+      bubbles: true,
+      cancelable: true,
+      view: window,
+    });
+    document.elementFromPoint(x, y)?.dispatchEvent(evt);
+    await sleep(randInt(8, 24));
+  }
+  target.dispatchEvent(
+    new MouseEvent("mouseover", {
+      clientX: endX,
+      clientY: endY,
+      bubbles: true,
+      view: window,
+    }),
+  );
+}
+
+const QWERTY_NEIGHBORS: Record<string, string> = {
+  a: "sqwz",
+  b: "vghn",
+  c: "xdfv",
+  d: "serfcx",
+  e: "wrdsf",
+  f: "drtgvc",
+  g: "ftyhbv",
+  h: "gyujnb",
+  i: "uojkl",
+  j: "huikmn",
+  k: "jiolm",
+  l: "kop",
+  m: "njk",
+  n: "bhjm",
+  o: "iklp",
+  p: "ol",
+  q: "was",
+  r: "edft",
+  s: "awdxz",
+  t: "rfgy",
+  u: "yhji",
+  v: "cfgb",
+  w: "qase",
+  x: "zsdc",
+  y: "tghu",
+  z: "asx",
+};
+
+function typoFor(ch: string): string {
+  const lower = ch.toLowerCase();
+  const neighbors = QWERTY_NEIGHBORS[lower];
+  if (!neighbors) return ch;
+  const pick = neighbors[randInt(0, neighbors.length - 1)];
+  return ch === lower ? pick : pick.toUpperCase();
+}
+
+async function humanType(
+  el: HTMLElement,
+  text: string,
+  hz: HumanizerConfig,
+): Promise<void> {
+  el.focus();
+  // Convert WPM to ms-per-char. Avg word = 5 chars.
+  const wpm = rand(hz.typing_wpm_min, hz.typing_wpm_max);
+  const avgMsPerChar = 60_000 / (wpm * 5);
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    // Occasional typo + correction
+    if (/[a-zA-Z]/.test(ch) && Math.random() < hz.mistake_rate) {
+      const wrong = typoFor(ch);
+      insertChar(el, wrong);
+      await sleep(avgMsPerChar * rand(0.8, 1.5));
+      // Backspace correction
+      insertBackspace(el);
+      await sleep(avgMsPerChar * rand(0.3, 0.8));
+    }
+    insertChar(el, ch);
+    // Variance per-char: +/- 50% around avg.
+    let delay = avgMsPerChar * rand(0.5, 1.5);
+    if (ch === "." || ch === "!" || ch === "?" || ch === "\n") {
+      delay += rand(
+        hz.pause_between_sentences_ms_min,
+        hz.pause_between_sentences_ms_max,
+      );
+    }
+    await sleep(delay);
+  }
+  // Verify — fall back to whole-text paste if somehow the editor didn't receive it.
+  if (!el.textContent?.includes(text.slice(0, 20))) {
+    await pasteText(el, text);
+  }
+}
+
+function insertChar(el: HTMLElement, ch: string): void {
+  // Fire key events so React/FB's composer validates content.
+  el.dispatchEvent(new KeyboardEvent("keydown", { key: ch, bubbles: true }));
+  if (ch === "\n") {
+    document.execCommand("insertLineBreak", false);
+  } else {
+    document.execCommand("insertText", false, ch);
+  }
+  el.dispatchEvent(new KeyboardEvent("keyup", { key: ch, bubbles: true }));
+  el.dispatchEvent(new InputEvent("input", { data: ch, bubbles: true }));
+}
+
+function insertBackspace(el: HTMLElement): void {
+  el.dispatchEvent(new KeyboardEvent("keydown", { key: "Backspace", bubbles: true }));
+  document.execCommand("delete", false);
+  el.dispatchEvent(new KeyboardEvent("keyup", { key: "Backspace", bubbles: true }));
+  el.dispatchEvent(new InputEvent("input", { inputType: "deleteContentBackward", bubbles: true }));
 }
 
 console.log("[autoposter-AI] content script loaded", { locale: detectLocale() });

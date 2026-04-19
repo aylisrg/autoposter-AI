@@ -81,6 +81,7 @@ async function handlePublish(msg: Record<string, unknown>): Promise<Record<strin
     text: msg.text,
     image_url: msg.image_url,
     first_comment: msg.first_comment,
+    humanizer: msg.humanizer,
   });
   if (!response?.ok) throw new Error(response?.error || "content script reported failure");
   return { post_url: response.post_url, post_id: response.post_id };
