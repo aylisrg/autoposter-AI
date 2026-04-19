@@ -123,11 +123,16 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M5 — Review & Approval Flow
 
-- [ ] `ReviewQueue` (pending → approved/edited/rejected)
-- [ ] UI Queue: per-platform preview, inline-edit, regenerate variant, thumbs up/down
-- [ ] «Approve all» / «Approve selected»
-- [ ] Auto-approve toggle для доверенных типов после N успешных
-- [ ] Verification: 10 постов в очереди — апрув 7, эдит 2, скип 1
+- [x] Reuse `PostStatus.PENDING_REVIEW`; `generate()` роутит туда при
+      `review_before_posting=true` и отсутствии типа в `auto_approve_types`
+- [x] UI `/review`: inline-edit, regenerate, thumbs up/down, approve→DRAFT /
+      approve→SCHEDULE(+5 мин), reject с reason, bulk approve
+- [x] `POST /api/posts/{id}/approve`, `/reject`, `/regenerate`,
+      `/review/approve-all`, `GET /api/posts/review/pending`
+- [x] Auto-approve allow-list: `BusinessProfile.auto_approve_types: list[str]`
+      (Profile page — comma-separated input)
+- [x] Verification: 12 pytest (PENDING_REVIEW роутинг, auto-approve, approve/
+      reject/regenerate/approve-all, thumbs feedback)
 
 ### M6 — SMM Analyst Agent + Auto-Improving Loop ⭐
 

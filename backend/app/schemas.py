@@ -46,6 +46,7 @@ class BusinessProfileIn(BaseModel):
     timezone: str = "UTC"
     posts_per_day: int = 3
     review_before_posting: bool = True
+    auto_approve_types: list[str] = Field(default_factory=list)
 
 
 class BusinessProfileOut(BusinessProfileIn):
@@ -462,3 +463,29 @@ class BlackoutDateOut(BaseModel):
     id: int
     date: datetime
     reason: str | None
+
+
+# ---------- Review & Approval (M5) ----------
+
+
+class PostApproveRequest(BaseModel):
+    """Approve a PENDING_REVIEW post. If `scheduled_for` is set, the post is
+    scheduled with variants; otherwise it transitions to DRAFT for later action.
+    """
+
+    target_ids: list[int] = Field(default_factory=list)
+    scheduled_for: datetime | None = None
+
+
+class PostRejectRequest(BaseModel):
+    reason: str | None = None
+
+
+class PostRegenerateRequest(BaseModel):
+    topic_hint: str | None = None
+    generate_image: bool = False
+
+
+class PostApproveAllRequest(BaseModel):
+    post_type: PostType | None = None
+    scheduled_for: datetime | None = None

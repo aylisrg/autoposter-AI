@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   Calendar,
   CalendarDays,
+  CheckSquare,
   Home,
   Image as ImageIcon,
   ListChecks,
@@ -20,6 +21,7 @@ const NAV = [
   { href: "/plans", label: "Content Plans", icon: CalendarDays },
   { href: "/library", label: "Media Library", icon: ImageIcon },
   { href: "/compose", label: "Compose", icon: PenSquare },
+  { href: "/review", label: "Review", icon: CheckSquare },
   { href: "/queue", label: "Queue", icon: ListChecks },
   { href: "/humanizer", label: "Humanizer", icon: ShieldCheck },
 ];

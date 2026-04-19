@@ -25,10 +25,14 @@ from app.db.models import (
 )
 from app.platforms.facebook import FacebookPlatform
 from app.schemas import (
+    PostApproveAllRequest,
+    PostApproveRequest,
     PostGenerate,
     PostIn,
     PostOut,
     PostPatch,
+    PostRegenerateRequest,
+    PostRejectRequest,
     PublishRequest,
     PublishResultOut,
 )
@@ -136,9 +140,18 @@ def generate(
         image_prompt = img.prompt
         total_cost += img.cost_usd
 
+    # M5: route to PENDING_REVIEW if the profile asks for it and this post_type
+    # isn't on the auto-approve allow-list.
+    auto_approved = payload.post_type.value in (profile.auto_approve_types or [])
+    initial_status = (
+        PostStatus.PENDING_REVIEW
+        if profile.review_before_posting and not auto_approved
+        else PostStatus.DRAFT
+    )
+
     post = Post(
         post_type=payload.post_type,
-        status=PostStatus.DRAFT,
+        status=initial_status,
         text=generated.text,
         image_url=image_url,
         image_prompt=image_prompt,
@@ -331,3 +344,168 @@ def schedule(
     return refreshed
 
 
+# ---------- Review & Approval (M5) ----------
+
+
+@router.get("/review/pending", response_model=list[PostOut])
+def list_pending_review(
+    limit: int = 100,
+    db: Session = Depends(get_session),
+) -> list[Post]:
+    """Shorthand for `GET /api/posts?status_filter=pending_review` — what the
+    Queue page uses to build the review tab.
+    """
+    return (
+        db.query(Post)
+        .options(selectinload(Post.variants))
+        .filter(Post.status == PostStatus.PENDING_REVIEW)
+        .order_by(Post.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+
+def _approve_single(
+    db: Session,
+    post: Post,
+    target_ids: list[int],
+    scheduled_for: datetime | None,
+    profile: BusinessProfile | None,
+) -> Post:
+    """Shared approve implementation (single + bulk). Mutates and commits."""
+    if post.status != PostStatus.PENDING_REVIEW:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Post {post.id} is in status {post.status.value}, not pending_review.",
+        )
+    if scheduled_for is not None:
+        from app.services import humanizer as hz
+
+        humanizer_profile = hz.get_or_create_profile(db)
+        post.scheduled_for = hz.apply_schedule_jitter(scheduled_for, humanizer_profile)
+        if target_ids:
+            _ensure_variants(
+                db,
+                post,
+                target_ids=target_ids,
+                profile=profile,
+                generate_spintax=True,
+            )
+        post.status = PostStatus.SCHEDULED
+    else:
+        post.status = PostStatus.DRAFT
+    db.commit()
+    return post
+
+
+@router.post("/{post_id}/approve", response_model=PostOut)
+def approve_post(
+    post_id: int,
+    payload: PostApproveRequest,
+    db: Session = Depends(get_session),
+) -> Post:
+    post = _eager_load(db, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    _approve_single(db, post, payload.target_ids, payload.scheduled_for, profile)
+    refreshed = _eager_load(db, post.id)
+    assert refreshed is not None
+    return refreshed
+
+
+@router.post("/{post_id}/reject", response_model=PostOut)
+def reject_post(
+    post_id: int,
+    payload: PostRejectRequest,
+    db: Session = Depends(get_session),
+) -> Post:
+    post = _eager_load(db, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.status not in (PostStatus.PENDING_REVIEW, PostStatus.DRAFT):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot reject a post in status {post.status.value}.",
+        )
+    post.status = PostStatus.SKIPPED
+    if payload.reason:
+        # Stash reason inline — we don't have a dedicated column and don't need
+        # one for v1. generation_prompt is an admin/debug field anyway.
+        existing = post.generation_prompt or ""
+        post.generation_prompt = (existing + f"\n[REJECTED] {payload.reason}").strip()
+    db.commit()
+    refreshed = _eager_load(db, post.id)
+    assert refreshed is not None
+    return refreshed
+
+
+@router.post("/{post_id}/regenerate", response_model=PostOut)
+def regenerate_post(
+    post_id: int,
+    payload: PostRegenerateRequest,
+    db: Session = Depends(get_session),
+) -> Post:
+    post = _eager_load(db, post_id)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.status not in (PostStatus.PENDING_REVIEW, PostStatus.DRAFT):
+        raise HTTPException(
+            status_code=409,
+            detail="Only PENDING_REVIEW / DRAFT posts can be regenerated.",
+        )
+    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    if profile is None:
+        raise HTTPException(status_code=400, detail="Business profile required.")
+
+    generated = generate_post(
+        db=db,
+        post_type=post.post_type,
+        business_profile=profile,
+        topic_hint=payload.topic_hint,
+        use_few_shot=True,
+    )
+    post.text = generated.text
+    post.generation_prompt = generated.user_prompt
+    post.generation_model = generated.model
+    # Bump cost — regenerating isn't free.
+    post.generation_cost_usd = (post.generation_cost_usd or 0.0) + generated.cost_usd
+    if payload.generate_image:
+        img = generate_image(
+            post_text=generated.text,
+            business_desc=profile.description,
+            tone=profile.tone.value,
+        )
+        post.image_url = f"/static/{img.local_path}"
+        post.image_prompt = img.prompt
+        post.generation_cost_usd += img.cost_usd
+    db.commit()
+    refreshed = _eager_load(db, post.id)
+    assert refreshed is not None
+    return refreshed
+
+
+@router.post("/review/approve-all", response_model=list[PostOut])
+def approve_all(
+    payload: PostApproveAllRequest,
+    db: Session = Depends(get_session),
+) -> list[Post]:
+    q = db.query(Post).filter(Post.status == PostStatus.PENDING_REVIEW)
+    if payload.post_type is not None:
+        q = q.filter(Post.post_type == payload.post_type)
+    pending = q.all()
+    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    approved: list[Post] = []
+    for post in pending:
+        _approve_single(db, post, [], payload.scheduled_for, profile)
+        approved.append(post)
+    # Eager-reload all for response.
+    ids = [p.id for p in approved]
+    if not ids:
+        return []
+    return (
+        db.query(Post)
+        .options(selectinload(Post.variants))
+        .filter(Post.id.in_(ids))
+        .all()
+    )

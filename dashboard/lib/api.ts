@@ -50,6 +50,7 @@ export interface BusinessProfile {
   timezone: string;
   posts_per_day: number;
   review_before_posting: boolean;
+  auto_approve_types: string[];
   created_at: string;
   updated_at: string;
 }
@@ -321,6 +322,53 @@ export const schedulePost = (
   request<Post>(`/api/posts/${id}/schedule`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+
+// ---------- Review & Approval (M5) ----------
+
+export const listPendingReview = () =>
+  request<Post[]>("/api/posts/review/pending");
+
+export const approvePost = (
+  id: number,
+  payload: { target_ids?: number[]; scheduled_for?: string | null } = {},
+) =>
+  request<Post>(`/api/posts/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify({
+      target_ids: payload.target_ids ?? [],
+      scheduled_for: payload.scheduled_for ?? null,
+    }),
+  });
+
+export const rejectPost = (id: number, reason?: string) =>
+  request<Post>(`/api/posts/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? null }),
+  });
+
+export const regeneratePost = (
+  id: number,
+  payload: { topic_hint?: string | null; generate_image?: boolean } = {},
+) =>
+  request<Post>(`/api/posts/${id}/regenerate`, {
+    method: "POST",
+    body: JSON.stringify({
+      topic_hint: payload.topic_hint ?? null,
+      generate_image: payload.generate_image ?? false,
+    }),
+  });
+
+export const approveAllPending = (payload: {
+  post_type?: PostType | null;
+  scheduled_for?: string | null;
+}) =>
+  request<Post[]>("/api/posts/review/approve-all", {
+    method: "POST",
+    body: JSON.stringify({
+      post_type: payload.post_type ?? null,
+      scheduled_for: payload.scheduled_for ?? null,
+    }),
   });
 
 // ---------- Feedback ----------

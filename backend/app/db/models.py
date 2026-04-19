@@ -110,6 +110,9 @@ class BusinessProfile(Base):
     timezone: Mapped[str] = mapped_column(String(50), default="UTC")
     posts_per_day: Mapped[int] = mapped_column(Integer, default=3)
     review_before_posting: Mapped[bool] = mapped_column(Boolean, default=True)
+    # M5 — auto-approve list: post_type values that skip the review queue
+    # entirely (e.g. ["informative", "motivational"] after you trust the agent).
+    auto_approve_types: Mapped[list[str]] = mapped_column(JSON, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

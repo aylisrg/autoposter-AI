@@ -124,10 +124,14 @@ def test_generate_requires_profile(client, fake_generate_post):
 
 
 def test_full_publish_flow(client, fake_generate_post, fake_spintax):
-    # 1. Profile
+    # 1. Profile — turn off review so generate() returns DRAFT directly
     r = client.put(
         "/api/business-profile",
-        json={"name": "Acme", "description": "We make things."},
+        json={
+            "name": "Acme",
+            "description": "We make things.",
+            "review_before_posting": False,
+        },
     )
     assert r.status_code == 200
 

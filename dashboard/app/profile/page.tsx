@@ -267,6 +267,26 @@ export default function ProfilePage() {
               <Label htmlFor="rbp">Require review before posting</Label>
             </div>
 
+            <div className="space-y-1.5">
+              <Label>
+                Auto-approve post types (comma-separated — skip review queue for
+                trusted types)
+              </Label>
+              <Input
+                placeholder="e.g. informative, motivational"
+                value={(form.auto_approve_types ?? []).join(", ")}
+                onChange={(e) =>
+                  update(
+                    "auto_approve_types",
+                    e.target.value
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  )
+                }
+              />
+            </div>
+
             <div className="flex items-center gap-3">
               <Button type="submit" disabled={saving}>
                 {saving ? "Saving…" : "Save"}
