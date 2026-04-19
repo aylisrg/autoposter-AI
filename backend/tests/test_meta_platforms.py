@@ -79,8 +79,8 @@ def test_threads_adapt_leaves_hashtags_alone():
 # ---------- Registry ----------
 
 
-def test_registry_has_three_platforms():
-    assert set(PLATFORMS.keys()) == {"facebook", "instagram", "threads"}
+def test_registry_has_four_platforms():
+    assert set(PLATFORMS.keys()) == {"facebook", "instagram", "threads", "linkedin"}
 
 
 def test_get_platform_returns_correct_subclass():
