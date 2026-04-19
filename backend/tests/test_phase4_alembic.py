@@ -12,11 +12,18 @@ a no-op the second time.
 """
 from __future__ import annotations
 
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import StaticPool
 
 from app.db import session as db_session
 from app.db.models import Base
+
+
+def _head_revision() -> str:
+    """Ask Alembic what `head` currently is instead of hard-coding a revision
+    id that drifts every time we add a migration."""
+    return ScriptDirectory.from_config(db_session._alembic_config()).get_current_head()
 
 # Tables the baseline migration 0001 is expected to create. Keep this list
 # explicit so drift in the model layer or a botched autogen gets caught
@@ -66,7 +73,7 @@ def test_init_db_upgrades_fresh_db(monkeypatch):
 
     with eng.connect() as conn:
         row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
-    assert row is not None and row[0] == "0001"
+    assert row is not None and row[0] == _head_revision()
 
 
 def test_init_db_is_idempotent(monkeypatch):
@@ -80,7 +87,7 @@ def test_init_db_is_idempotent(monkeypatch):
 
     with eng.connect() as conn:
         row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
-    assert row[0] == "0001"
+    assert row[0] == _head_revision()
 
 
 def test_init_db_stamps_preexisting_schema(monkeypatch):
@@ -104,7 +111,7 @@ def test_init_db_stamps_preexisting_schema(monkeypatch):
 
     with eng.connect() as conn:
         row = conn.execute(text("SELECT version_num FROM alembic_version")).fetchone()
-    assert row[0] == "0001"
+    assert row[0] == _head_revision()
 
 
 def test_alembic_config_points_at_bundled_ini():

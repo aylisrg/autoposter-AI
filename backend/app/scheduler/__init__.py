@@ -30,6 +30,7 @@ class SchedulerSingleton:
             return
         # Late import: jobs.py imports models, which require db init first.
         from app.scheduler.jobs import (
+            collect_follower_snapshots_tick,
             collect_metrics_tick,
             daily_backup_tick,
             publish_due_posts,
@@ -77,9 +78,21 @@ class SchedulerSingleton:
             coalesce=True,
             max_instances=1,
         )
+        # Daily follower-count snapshot — 02:00 UTC, before the backup so
+        # the snapshot is included in the archive that day.
+        self._impl.add_job(
+            collect_follower_snapshots_tick,
+            trigger="cron",
+            hour=2,
+            minute=0,
+            id="collect_followers",
+            coalesce=True,
+            max_instances=1,
+        )
         self._impl.start()
         log.info(
-            "Scheduler started (publish 30s, metrics 1h, analyst Sun 21:00, backup 03:00)"
+            "Scheduler started (publish 30s, metrics 1h, analyst Sun 21:00, "
+            "followers 02:00, backup 03:00)"
         )
 
     def shutdown(self, wait: bool = False) -> None:
