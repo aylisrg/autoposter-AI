@@ -11,7 +11,6 @@ or profile:
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from app.db.models import Post, Target
@@ -57,7 +56,7 @@ class FacebookPlatform(Platform):
         }
         try:
             response = await bridge.request(payload, timeout=180)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return PublishResult(ok=False, error="Extension did not respond in time")
 
         if response.get("ok"):

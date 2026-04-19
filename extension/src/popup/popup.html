@@ -6,37 +6,56 @@
     <style>
       body {
         font-family: system-ui, -apple-system, sans-serif;
-        width: 280px;
-        padding: 16px;
+        width: 320px;
+        padding: 14px;
         margin: 0;
       }
       h1 {
         font-size: 14px;
-        margin: 0 0 12px;
+        margin: 0 0 10px;
       }
       .status {
         font-size: 12px;
-        padding: 8px 12px;
+        padding: 8px 10px;
         border-radius: 6px;
         background: #f3f4f6;
+        margin-bottom: 10px;
       }
-      .status.ok {
-        background: #dcfce7;
-        color: #14532d;
+      .status.ok { background: #dcfce7; color: #14532d; }
+      .status.warn { background: #fef3c7; color: #78350f; }
+      .status.err { background: #fee2e2; color: #7f1d1d; }
+      a { font-size: 12px; color: #2563eb; }
+      button {
+        width: 100%;
+        padding: 8px;
+        font-size: 13px;
+        background: #2563eb;
+        color: white;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+        margin-bottom: 8px;
       }
-      .status.err {
-        background: #fee2e2;
-        color: #7f1d1d;
-      }
-      a {
-        font-size: 12px;
-        color: #2563eb;
+      button:disabled { background: #9ca3af; cursor: not-allowed; }
+      pre {
+        font-size: 11px;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 4px;
+        padding: 6px;
+        max-height: 180px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-all;
+        margin: 0;
       }
     </style>
   </head>
   <body>
     <h1>autoposter-AI</h1>
-    <div id="status" class="status">Checking backend...</div>
+    <div id="status" class="status">Checking backend…</div>
+    <button id="smoke">Run FB selector smoke test</button>
+    <pre id="smoke-out"></pre>
     <p><a href="http://localhost:3000" target="_blank">Open dashboard</a></p>
     <script>
       fetch("http://localhost:8787/healthz")
@@ -45,10 +64,10 @@
           const el = document.getElementById("status");
           if (d.extension_connected) {
             el.className = "status ok";
-            el.textContent = "Connected to backend";
+            el.textContent = "Backend: OK — extension linked";
           } else {
-            el.className = "status";
-            el.textContent = "Backend running, extension not linked yet";
+            el.className = "status warn";
+            el.textContent = "Backend: OK — waiting for extension WS";
           }
         })
         .catch(() => {
@@ -56,6 +75,26 @@
           el.className = "status err";
           el.textContent = "Backend not reachable on :8787";
         });
+
+      document.getElementById("smoke").addEventListener("click", async () => {
+        const btn = document.getElementById("smoke");
+        const out = document.getElementById("smoke-out");
+        btn.disabled = true;
+        out.textContent = "Running on active tab…";
+        try {
+          const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (!tab?.id || !tab.url?.includes("facebook.com")) {
+            out.textContent = "Open a facebook.com tab first.";
+            return;
+          }
+          const result = await chrome.tabs.sendMessage(tab.id, { type: "smoke" });
+          out.textContent = JSON.stringify(result, null, 2);
+        } catch (e) {
+          out.textContent = "Error: " + (e?.message || e);
+        } finally {
+          btn.disabled = false;
+        }
+      });
     </script>
   </body>
 </html>

@@ -10,7 +10,7 @@ Groups + Profile, расширяемся на LinkedIn / X / Threads / Bluesky /
 
 | Слой | Что делает | Стек |
 |------|-----------|------|
-| `backend/` | FastAPI-сервер: планировщик, AI-генерация, БД, оркестрация | Python 3.12, FastAPI, SQLAlchemy, APScheduler, Anthropic SDK, Gemini SDK |
+| `backend/` | FastAPI-сервер: планировщик, AI-генерация, БД, оркестрация | Python 3.11+, FastAPI, SQLAlchemy, APScheduler, Anthropic SDK, Gemini SDK |
 | `extension/` | Chrome-расширение: DOM-автоматизация Facebook | TypeScript, Manifest V3, Vite |
 | `dashboard/` | UI: business profile, календарь, очередь ревью, логи | Next.js 15, Tailwind, shadcn/ui |
 
@@ -68,7 +68,7 @@ class Platform(ABC):
 ## Setup
 
 ### Требования
-- Python 3.12+
+- Python 3.11+
 - Node.js 20+
 - Chrome или Chromium-based браузер
 - API-ключи: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (оба в `.env`)

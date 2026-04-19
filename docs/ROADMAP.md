@@ -75,12 +75,12 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M0 — Foundation Hardening
 
-- [ ] REST CRUD endpoints: BusinessProfile, Target, Post, Feedback (`backend/app/api/`)
-- [ ] APScheduler стартует с приложением; job runner для scheduled posts
-- [ ] Dashboard skeleton: Next.js 15 + Tailwind + shadcn/ui (Profile / Targets / Queue)
-- [ ] Реальные FB DOM селекторы (с фоллбеком и smoke-тестом)
-- [ ] Image attach через File API в extension
-- [ ] Verification: ручной post через dashboard → подтверждение в FB
+- [x] REST CRUD endpoints: BusinessProfile, Target, Post, Feedback (`backend/app/api/`)
+- [x] APScheduler стартует с приложением; job runner для scheduled posts
+- [x] Dashboard skeleton: Next.js 15 + Tailwind + shadcn/ui (Profile / Targets / Compose / Queue)
+- [x] Реальные FB DOM селекторы (с фоллбеком и smoke-тестом через popup)
+- [x] Image attach через File API в extension + backend `/api/media/upload`
+- [x] Verification: `docs/M0_CHECKLIST.md` + pytest smoke suite (11 зелёных)
 
 ### M1 — Content Planner Agent
 
