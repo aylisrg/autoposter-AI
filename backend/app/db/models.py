@@ -218,6 +218,9 @@ class PostVariant(Base):
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     external_post_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # A/B test arm label (e.g. "control", "a", "b"). Null when the post isn't
+    # part of a split test. Populated by POST /api/posts/{id}/ab-split.
+    ab_arm: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
 
     post: Mapped[Post] = relationship(back_populates="variants")
 
