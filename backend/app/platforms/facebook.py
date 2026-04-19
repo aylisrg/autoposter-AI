@@ -11,7 +11,6 @@ or profile:
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from app.db.models import Post, Target
@@ -44,7 +43,9 @@ class FacebookPlatform(Platform):
             for g in groups
         ]
 
-    async def publish(self, post: Post, target: Target) -> PublishResult:
+    async def publish(
+        self, post: Post, target: Target, humanizer: dict | None = None
+    ) -> PublishResult:
         """Send a publish command to the extension."""
         request_id = uuid.uuid4().hex
         payload = {
@@ -54,10 +55,11 @@ class FacebookPlatform(Platform):
             "text": post.text,
             "image_url": post.image_url,  # local URL served by backend /static
             "first_comment": post.first_comment,
+            "humanizer": humanizer,  # content script uses it to pace typing/mouse
         }
         try:
-            response = await bridge.request(payload, timeout=180)
-        except asyncio.TimeoutError:
+            response = await bridge.request(payload, timeout=240)
+        except TimeoutError:
             return PublishResult(ok=False, error="Extension did not respond in time")
 
         if response.get("ok"):
@@ -71,3 +73,34 @@ class FacebookPlatform(Platform):
             error=response.get("error", "Unknown error from extension"),
             raw=response,
         )
+
+    async def fetch_metrics(self, external_post_id: str) -> dict | None:
+        """Ask the extension to scrape likes/comments/shares from a post URL.
+
+        external_post_id is the full permalink we captured during publish. The
+        extension opens the page (or reuses an existing tab) and scrapes the
+        reaction / comment / share counters.
+        """
+        if not external_post_id or not external_post_id.startswith("http"):
+            return None
+        request_id = uuid.uuid4().hex
+        try:
+            response = await bridge.request(
+                {
+                    "type": "fetch_metrics",
+                    "request_id": request_id,
+                    "post_url": external_post_id,
+                },
+                timeout=60,
+            )
+        except TimeoutError:
+            return None
+        if not response.get("ok"):
+            return None
+        m = response.get("metrics", {})
+        return {
+            "likes": int(m.get("likes") or 0),
+            "comments": int(m.get("comments") or 0),
+            "shares": int(m.get("shares") or 0),
+            "reach": m.get("reach"),
+        }

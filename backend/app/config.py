@@ -34,5 +34,35 @@ class Settings(BaseSettings):
     max_delay_between_posts_sec: int = 300
     max_posts_per_day: int = 50
 
+    # M7 — Meta (Instagram + Threads) OAuth
+    # Values come from the Facebook Developers console (Meta App). All
+    # optional — the IG/Threads platforms just refuse to publish if the
+    # corresponding long-lived token isn't set.
+    meta_app_id: str = ""
+    meta_app_secret: str = ""
+    meta_redirect_uri: str = "http://localhost:8787/api/meta/oauth/callback"
+    # Long-lived user access token — populated via the /api/meta/oauth/callback
+    # flow; we persist it on the PlatformCredential row too, but keep this
+    # setting as an escape hatch for CLI users who'd rather paste a token.
+    meta_access_token: str = ""
+    # The Instagram Business Account id (numeric). One per Meta App; if the
+    # user has multiple we pick the first unless they override.
+    instagram_account_id: str = ""
+    # The Threads user id (numeric).
+    threads_user_id: str = ""
+
+    # M8 — Security
+    # Empty = auth disabled (single-user localhost default). Set to any
+    # 4–32 char string to require `X-Dashboard-Pin` or a `/api/auth/login`
+    # cookie on every /api/* request.
+    dashboard_pin: str = ""
+    # Fernet key for encryption-at-rest (44-char urlsafe base64). Empty = we
+    # auto-generate one into `data/.fernet.key` and use that.
+    fernet_key: str = ""
+
+    # M8 — Backups
+    backup_dir: str = "data/backups"
+    backup_keep_days: int = 14
+
 
 settings = Settings()

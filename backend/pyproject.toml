@@ -2,7 +2,7 @@
 name = "pilotposter-clone-backend"
 version = "0.1.0"
 description = "Self-hosted AI social media poster"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
@@ -21,6 +21,8 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "python-multipart>=0.0.12",
     "aiosqlite>=0.20",
+    "Pillow>=10.4",
+    "cryptography>=43.0",
 ]
 
 [project.optional-dependencies]
@@ -40,7 +42,11 @@ include = ["app*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

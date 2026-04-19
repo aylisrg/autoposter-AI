@@ -51,8 +51,25 @@ class Platform(ABC):
         """
 
     @abstractmethod
-    async def publish(self, post: Post, target: Target) -> PublishResult:
-        """Post the given content to the target."""
+    async def publish(
+        self, post: Post, target: Target, humanizer: dict | None = None
+    ) -> PublishResult:
+        """Post the given content to the target.
+
+        `humanizer` is a JSON-serializable dict of per-character typing speed,
+        mistake rate, mouse curvature, idle-scroll durations, etc. Platforms
+        that use a browser (Chrome extension) forward it verbatim to the
+        content script; API-based platforms can ignore it.
+        """
+
+    async def fetch_metrics(self, external_post_id: str) -> dict | None:
+        """Return engagement metrics for a posted item, or None if unsupported.
+
+        Returned dict keys (all optional): `likes`, `comments`, `shares`,
+        `reach`. Platforms may return partial data — callers fill the rest
+        with zeros / NULL.
+        """
+        return None
 
     def adapt_content(self, text: str) -> str:
         """Platform-specific content tweaks.

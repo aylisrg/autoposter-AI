@@ -60,11 +60,31 @@ async function routeCommand(msg: Record<string, unknown>): Promise<Record<string
       return await handlePublish(msg);
     case "list_groups":
       return await handleListGroups(msg);
+    case "list_suggested_groups":
+      return await handleListSuggestedGroups(msg);
+    case "fetch_metrics":
+      return await handleFetchMetrics(msg);
     case "ping":
       return { pong: true };
     default:
       throw new Error(`Unknown command: ${type}`);
   }
+}
+
+async function handleFetchMetrics(
+  msg: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const postUrl = msg.post_url as string;
+  if (!postUrl) throw new Error("post_url required");
+  const tab = await openOrFocusFacebookTab(postUrl);
+  if (!tab.id) throw new Error("Could not obtain tab id");
+  // Facebook's permalink pages need a beat to render reaction/comment counters.
+  await sleep(3500);
+  const response = await chrome.tabs.sendMessage(tab.id, {
+    type: "fetch_metrics",
+  });
+  if (!response?.ok) throw new Error(response?.error || "failed to fetch metrics");
+  return { metrics: response.metrics };
 }
 
 async function handlePublish(msg: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -79,6 +99,7 @@ async function handlePublish(msg: Record<string, unknown>): Promise<Record<strin
     text: msg.text,
     image_url: msg.image_url,
     first_comment: msg.first_comment,
+    humanizer: msg.humanizer,
   });
   if (!response?.ok) throw new Error(response?.error || "content script reported failure");
   return { post_url: response.post_url, post_id: response.post_id };
@@ -90,6 +111,20 @@ async function handleListGroups(_msg: Record<string, unknown>): Promise<Record<s
   await sleep(2500);
   const response = await chrome.tabs.sendMessage(tab.id, { type: "list_groups" });
   if (!response?.ok) throw new Error(response?.error || "failed to list groups");
+  return { groups: response.groups };
+}
+
+async function handleListSuggestedGroups(
+  _msg: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  // Facebook's "Discover groups" feed. It lazy-loads a lot — we scroll a few times.
+  const tab = await openOrFocusFacebookTab("https://www.facebook.com/groups/discover");
+  if (!tab.id) throw new Error("Could not obtain tab id");
+  await sleep(3000);
+  const response = await chrome.tabs.sendMessage(tab.id, {
+    type: "list_suggested_groups",
+  });
+  if (!response?.ok) throw new Error(response?.error || "failed to list suggested groups");
   return { groups: response.groups };
 }
 
