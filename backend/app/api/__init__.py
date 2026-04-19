@@ -7,6 +7,7 @@ from app.api import (
     auth,
     business_profile,
     feedback,
+    followers,
     health,
     humanizer,
     linkedin_oauth,
@@ -33,5 +34,6 @@ api_router.include_router(meta_oauth.router)
 api_router.include_router(linkedin_oauth.router)
 api_router.include_router(platform_credentials.router)
 api_router.include_router(ab_tests.router)
+api_router.include_router(followers.router)
 
 __all__ = ["api_router"]

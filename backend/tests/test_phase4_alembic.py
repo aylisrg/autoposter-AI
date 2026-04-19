@@ -21,6 +21,8 @@ from app.db.models import Base
 
 
 def _head_revision() -> str:
+    """Ask Alembic what `head` currently is instead of hard-coding a revision
+    id that drifts every time we add a migration."""
     return ScriptDirectory.from_config(db_session._alembic_config()).get_current_head()
 
 # Tables the baseline migration 0001 is expected to create. Keep this list

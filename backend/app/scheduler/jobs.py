@@ -221,6 +221,26 @@ async def daily_backup_tick() -> None:
         log.exception("daily_backup_tick crashed")
 
 
+async def collect_follower_snapshots_tick() -> None:
+    """Daily. One follower-count snapshot per connected Meta credential."""
+    from app.services import followers
+
+    db = SessionLocal()
+    try:
+        result = await asyncio.to_thread(followers.collect_follower_snapshots, db)
+        if result.collected or result.failed:
+            log.info(
+                "follower snapshot tick: collected=%d failed=%d skipped=%d",
+                result.collected,
+                result.failed,
+                result.skipped,
+            )
+    except Exception:
+        log.exception("collect_follower_snapshots_tick crashed")
+    finally:
+        db.close()
+
+
 async def weekly_analyst_tick() -> None:
     """Weekly Analyst run. No-op if profile or fresh metrics are missing."""
     from datetime import timedelta
