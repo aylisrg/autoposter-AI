@@ -27,6 +27,7 @@ from datetime import UTC, datetime, timedelta
 from anthropic import Anthropic
 from sqlalchemy.orm import Session
 
+from app.agents import MalformedLLMResponse
 from app.config import settings
 from app.db.models import (
     AnalystReport,
@@ -141,8 +142,14 @@ def _extract_json(text: str) -> dict:
     first = text.find("{")
     last = text.rfind("}")
     if first == -1 or last == -1 or first > last:
-        raise ValueError(f"No JSON in analyst response: {text[:300]!r}")
-    return json.loads(text[first : last + 1])
+        raise MalformedLLMResponse(f"No JSON in analyst response: {text[:300]!r}")
+    snippet = text[first : last + 1]
+    try:
+        return json.loads(snippet)
+    except json.JSONDecodeError as exc:
+        raise MalformedLLMResponse(
+            f"Analyst returned malformed JSON: {exc.msg} (snippet: {snippet[:200]!r})"
+        ) from exc
 
 
 def _posts_block(db: Session, period_start: datetime, period_end: datetime) -> str:

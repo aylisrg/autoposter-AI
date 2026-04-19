@@ -76,9 +76,10 @@ def create_post(payload: PostIn, db: Session = Depends(get_session)) -> Post:
     post = Post(**payload.model_dump(), status=PostStatus.DRAFT)
     db.add(post)
     db.commit()
-    post = _eager_load(db, post.id)
-    assert post is not None
-    return post
+    refreshed = _eager_load(db, post.id)
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
+    return refreshed
 
 
 @router.patch("/{post_id}", response_model=PostOut)
@@ -94,7 +95,8 @@ def patch_post(
         setattr(post, key, value)
     db.commit()
     refreshed = _eager_load(db, post.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
     return refreshed
 
 
@@ -162,7 +164,8 @@ def generate(
     db.add(post)
     db.commit()
     refreshed = _eager_load(db, post.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
     return refreshed
 
 
@@ -298,7 +301,8 @@ async def publish_now(
     db.commit()
 
     refreshed = _eager_load(db, post.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
     return PublishResultOut(
         post_id=refreshed.id,
         status=refreshed.status,
@@ -346,7 +350,8 @@ def schedule(
     db.commit()
 
     refreshed = _eager_load(db, post.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
     return refreshed
 
 
@@ -416,7 +421,8 @@ def approve_post(
     profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
     _approve_single(db, post, payload.target_ids, payload.scheduled_for, profile)
     refreshed = _eager_load(db, post.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
     return refreshed
 
 
@@ -442,7 +448,8 @@ def reject_post(
         post.generation_prompt = (existing + f"\n[REJECTED] {payload.reason}").strip()
     db.commit()
     refreshed = _eager_load(db, post.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
     return refreshed
 
 
@@ -487,7 +494,8 @@ def regenerate_post(
         post.generation_cost_usd += img.cost_usd
     db.commit()
     refreshed = _eager_load(db, post.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Post vanished after commit")
     return refreshed
 
 
