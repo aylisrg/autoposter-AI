@@ -210,8 +210,8 @@ class PostVariant(Base):
     __tablename__ = "post_variants"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"))
-    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"))
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), index=True)
+    target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
     text: Mapped[str] = mapped_column(Text)
     status: Mapped[PostStatus] = mapped_column(Enum(PostStatus), default=PostStatus.SCHEDULED)
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -227,7 +227,7 @@ class Feedback(Base):
     __tablename__ = "feedback"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"))
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), index=True)
     rating: Mapped[FeedbackRating] = mapped_column(Enum(FeedbackRating))
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

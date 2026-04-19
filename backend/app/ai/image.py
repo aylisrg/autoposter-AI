@@ -76,14 +76,25 @@ def generate_image(post_text: str, business_desc: str, tone: str = "casual") -> 
         ),
     )
 
-    # Extract image bytes from response
+    # Extract image bytes from response. Gemini can drop `candidates`, `content`,
+    # or `parts` entirely when a safety filter fires or on transient API errors —
+    # guard each access so we surface a readable error instead of AttributeError.
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        raise RuntimeError("Gemini returned no candidates (safety filter or API error)")
+    content = getattr(candidates[0], "content", None)
+    parts = getattr(content, "parts", None) or []
     image_bytes: bytes | None = None
-    for part in response.candidates[0].content.parts:
-        if part.inline_data is not None:
-            data = part.inline_data.data
-            # SDK may return bytes directly or base64-encoded str
-            image_bytes = data if isinstance(data, bytes) else base64.b64decode(data)
-            break
+    for part in parts:
+        inline = getattr(part, "inline_data", None)
+        if inline is None:
+            continue
+        data = getattr(inline, "data", None)
+        if data is None:
+            continue
+        # SDK may return bytes directly or base64-encoded str
+        image_bytes = data if isinstance(data, bytes) else base64.b64decode(data)
+        break
 
     if image_bytes is None:
         raise RuntimeError("Gemini returned no image data")

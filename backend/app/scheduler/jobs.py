@@ -226,12 +226,13 @@ async def weekly_analyst_tick() -> None:
     from datetime import timedelta
 
     from app.agents import analyst
-    from app.db.models import BusinessProfile, PostMetrics
+    from app.db import get_current_profile
+    from app.db.models import PostMetrics
     from app.services import few_shot
 
     db = SessionLocal()
     try:
-        profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+        profile = get_current_profile(db)
         if profile is None:
             log.info("weekly_analyst_tick: no profile, skipping")
             return

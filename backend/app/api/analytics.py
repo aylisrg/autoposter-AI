@@ -18,7 +18,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from app.agents import analyst as analyst_agent
-from app.db import get_session
+from app.db import get_current_profile, get_session
 from app.db.models import (
     AnalystReport,
     BusinessProfile,
@@ -169,7 +169,7 @@ async def generate_report(
     db: Session = Depends(get_session),
 ) -> AnalystReport:
     """Kick off a fresh analyst run. Blocks until Claude responds."""
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
     if profile is None:
         raise HTTPException(status_code=400, detail="Business profile required.")
 
@@ -214,7 +214,7 @@ def apply_proposal(proposal_id: int, db: Session = Depends(get_session)) -> Opti
             status_code=409,
             detail=f"Proposal is already {proposal.status.value}.",
         )
-    profile = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    profile = get_current_profile(db)
     if profile is None:
         raise HTTPException(status_code=400, detail="Business profile required.")
     # Unwrap scalar container if that's how the agent stored it.

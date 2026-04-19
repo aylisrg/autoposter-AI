@@ -30,7 +30,7 @@ from app.agents.planner import (
     refine_plan,
 )
 from app.ai.content import generate_post
-from app.db import get_session
+from app.db import get_current_profile, get_session
 from app.db.models import (
     BusinessProfile,
     ContentPlan,
@@ -67,7 +67,7 @@ def _eager(db: Session, plan_id: int) -> ContentPlan | None:
 
 
 def _require_profile(db: Session) -> BusinessProfile:
-    bp = db.query(BusinessProfile).order_by(BusinessProfile.id.asc()).first()
+    bp = get_current_profile(db)
     if bp is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -133,7 +133,8 @@ def create_plan_empty(
     db.add(plan)
     db.commit()
     refreshed = _eager(db, plan.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Plan vanished after commit")
     return refreshed
 
 
@@ -177,7 +178,8 @@ def generate_plan(
     _apply_slot_proposals(db, plan, proposal.slots, replace=False)
     db.commit()
     refreshed = _eager(db, plan.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Plan vanished after commit")
     return refreshed
 
 
@@ -194,7 +196,8 @@ def patch_plan(
         setattr(plan, key, value)
     db.commit()
     refreshed = _eager(db, plan.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Plan vanished after commit")
     return refreshed
 
 
@@ -249,7 +252,8 @@ def chat_refine(
 
     db.commit()
     refreshed = _eager(db, plan.id)
-    assert refreshed is not None
+    if refreshed is None:
+        raise HTTPException(status_code=500, detail="Plan vanished after commit")
     return PlanChatResponse(
         reply=result.reply,
         updated=bool(result.slots),

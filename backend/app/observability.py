@@ -8,6 +8,12 @@ grep and still parseable with a small awk script.
 - publish_attempts_total{platform,ok}
 - metrics_rows_collected_total
 
+And expose gauges sampled live on each scrape:
+- autoposter_extension_connected       — 0/1 (WS bridge attached?)
+- autoposter_backup_age_seconds        — seconds since newest zip in backup_dir
+- autoposter_scheduler_due_posts       — SCHEDULED posts with past due time
+- autoposter_pending_review_posts      — PENDING_REVIEW count
+
 Counters live in-process; restarting the backend resets them. Good enough for
 a self-hosted tool.
 """
@@ -16,6 +22,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from threading import Lock
 
 from fastapi import Request, Response
@@ -51,8 +58,38 @@ def _normalize_path(path: str) -> str:
     return "/".join(parts)
 
 
+# ---------- Gauges (live-sampled) ----------
+#
+# Unlike counters, gauges answer "what's the current value?" so they must be
+# computed at render time. We register sampler callbacks instead of keeping
+# stale values around — scrapes happen rarely enough that a handful of cheap
+# DB lookups on each scrape is fine.
+
+GaugeSample = tuple[str, dict[str, str], float]  # (name, labels, value)
+_samplers: list[Callable[[], list[GaugeSample]]] = []
+
+
+def register_gauge_sampler(fn: Callable[[], list[GaugeSample]]) -> None:
+    """Register a function that returns a list of gauge samples per scrape.
+
+    Samplers must be cheap and NEVER raise — wrap in try/except if they hit
+    IO. If a sampler returns nothing, nothing is emitted for it.
+    """
+    _samplers.append(fn)
+
+
+def _sampled_gauges() -> list[GaugeSample]:
+    out: list[GaugeSample] = []
+    for fn in _samplers:
+        try:
+            out.extend(fn())
+        except Exception:
+            log.exception("Gauge sampler crashed: %s", getattr(fn, "__name__", fn))
+    return out
+
+
 def render_prometheus() -> str:
-    """Emit counters in Prometheus exposition format."""
+    """Emit counters + live-sampled gauges in Prometheus exposition format."""
     lines: list[str] = []
     with _lock:
         for name, bucket in _counters.items():
@@ -63,6 +100,18 @@ def render_prometheus() -> str:
                     lines.append(f"{name}{{{lbl}}} {value}")
                 else:
                     lines.append(f"{name} {value}")
+    # Gauges — grouped by name so we can emit one TYPE line per gauge.
+    grouped: dict[str, list[tuple[dict[str, str], float]]] = defaultdict(list)
+    for name, labels, value in _sampled_gauges():
+        grouped[name].append((labels, value))
+    for name, samples in grouped.items():
+        lines.append(f"# TYPE {name} gauge")
+        for labels, value in samples:
+            if labels:
+                lbl = ",".join(f'{k}="{_escape(v)}"' for k, v in labels)
+                lines.append(f"{name}{{{lbl}}} {value}")
+            else:
+                lines.append(f"{name} {value}")
     return "\n".join(lines) + "\n"
 
 

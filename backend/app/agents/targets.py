@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 
 from anthropic import Anthropic
 
+from app.agents import MalformedLLMResponse
 from app.config import settings
 from app.db.models import BusinessProfile, Target
 
@@ -121,8 +122,16 @@ def _extract_json(text: str) -> dict:
     first = text.find("{")
     last = text.rfind("}")
     if first == -1 or last == -1 or first > last:
-        raise ValueError(f"No JSON object in model response: {text[:200]!r}")
-    return json.loads(text[first : last + 1])
+        raise MalformedLLMResponse(
+            f"No JSON object in model response: {text[:200]!r}"
+        )
+    snippet = text[first : last + 1]
+    try:
+        return json.loads(snippet)
+    except json.JSONDecodeError as exc:
+        raise MalformedLLMResponse(
+            f"Targets agent returned malformed JSON: {exc.msg} (snippet: {snippet[:200]!r})"
+        ) from exc
 
 
 def _call_claude(system: str, user: str) -> tuple[str, int, int]:

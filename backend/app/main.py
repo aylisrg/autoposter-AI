@@ -15,17 +15,30 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.agents import MalformedLLMResponse
 from app.api import api_router
 from app.config import settings
 from app.db import init_db
-from app.observability import RequestContextMiddleware, render_prometheus
+from app.observability import (
+    RequestContextMiddleware,
+    register_gauge_sampler,
+    render_prometheus,
+)
 from app.scheduler import scheduler
 from app.security import DashboardAuthMiddleware
+from app.services import health as health_samplers
 from app.ws.extension_bridge import bridge
+
+# Register live-sampled gauges for /metrics. Must happen at import time so the
+# first scrape after startup already has everything wired.
+register_gauge_sampler(health_samplers.sample_extension_status)
+register_gauge_sampler(health_samplers.sample_backup_age)
+register_gauge_sampler(health_samplers.sample_scheduler_depth)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("main")
@@ -72,6 +85,16 @@ app.mount("/static", StaticFiles(directory="data"), name="static")
 app.include_router(api_router)
 
 
+@app.exception_handler(MalformedLLMResponse)
+async def _malformed_llm_handler(request: Request, exc: MalformedLLMResponse) -> JSONResponse:
+    """LLM returned something we couldn't parse — treat as upstream (502)."""
+    log.warning("Malformed LLM response on %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=502,
+        content={"detail": "Upstream LLM returned malformed output. Try again."},
+    )
+
+
 @app.get("/metrics", include_in_schema=False)
 def prometheus_metrics() -> Response:
     """Prometheus scrape endpoint. Plain text exposition format."""
@@ -81,9 +104,30 @@ def prometheus_metrics() -> Response:
     )
 
 
+# Allowed Origin prefixes for /ws/ext. Only the Chrome extension (or a local
+# dev tool explicitly connecting without an Origin header, e.g. curl/websocat
+# during debugging) should ever reach this endpoint — any browser page would
+# send its own Origin header and must not be able to drive the bridge.
+_WS_ALLOWED_ORIGIN_PREFIXES = ("chrome-extension://", "moz-extension://")
+
+
+def _ws_origin_allowed(origin: str) -> bool:
+    if not origin:
+        # No Origin header — typically non-browser clients (test tools). Allow
+        # these so local debugging stays easy; a malicious browser page cannot
+        # omit Origin.
+        return True
+    return origin.startswith(_WS_ALLOWED_ORIGIN_PREFIXES)
+
+
 @app.websocket("/ws/ext")
 async def extension_ws(socket: WebSocket) -> None:
     """The Chrome extension connects here and we send it commands."""
+    origin = socket.headers.get("origin", "")
+    if not _ws_origin_allowed(origin):
+        log.warning("Rejecting /ws/ext connection from origin %r", origin)
+        await socket.close(code=1008)  # 1008 = policy violation
+        return
     await socket.accept()
     await bridge.attach(socket)
     try:

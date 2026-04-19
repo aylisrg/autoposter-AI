@@ -24,6 +24,7 @@ from datetime import UTC, datetime, timedelta
 
 from anthropic import Anthropic
 
+from app.agents import MalformedLLMResponse
 from app.config import settings
 from app.db.models import BusinessProfile, PostType
 
@@ -111,9 +112,16 @@ def _extract_json(text: str) -> dict:
     first = text.find("{")
     last = text.rfind("}")
     if first == -1 or last == -1 or first > last:
-        raise ValueError(f"No JSON object found in model response: {text[:200]!r}")
+        raise MalformedLLMResponse(
+            f"No JSON object found in model response: {text[:200]!r}"
+        )
     snippet = text[first : last + 1]
-    return json.loads(snippet)
+    try:
+        return json.loads(snippet)
+    except json.JSONDecodeError as exc:
+        raise MalformedLLMResponse(
+            f"Model returned malformed JSON: {exc.msg} (snippet: {snippet[:200]!r})"
+        ) from exc
 
 
 def _build_user_prompt(
