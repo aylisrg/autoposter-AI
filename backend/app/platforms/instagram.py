@@ -21,13 +21,34 @@ import logging
 import re
 from typing import ClassVar
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.db.models import Post, Target
+from app.errors import AuthError, RateLimitError, TransientError, ValidationError
 from app.platforms import meta_graph
 from app.platforms.base import Platform, PublishResult
 
 log = logging.getLogger("platforms.instagram")
+
+
+def _failure_from_meta(exc: meta_graph.MetaError) -> PublishResult:
+    """Translate a classified MetaError into a PublishResult with the right
+    transient/retry_after_sec flags for the scheduler to consume.
+    """
+    retry_after = getattr(exc, "retry_after", None)
+    if isinstance(exc, RateLimitError):
+        return PublishResult(
+            ok=False,
+            error=str(exc),
+            transient=True,
+            retry_after_sec=retry_after,
+        )
+    if isinstance(exc, AuthError) or isinstance(exc, ValidationError):
+        return PublishResult(ok=False, error=str(exc))
+    if isinstance(exc, TransientError):
+        return PublishResult(ok=False, error=str(exc), transient=True)
+    return PublishResult(ok=False, error=str(exc))
 
 
 # Instagram has a hard 2200-char caption limit.
@@ -144,7 +165,10 @@ class InstagramPlatform(Platform):
                 creation_id=creation_id,
             )
         except meta_graph.MetaError as exc:
-            return PublishResult(ok=False, error=str(exc))
+            return _failure_from_meta(exc)
+        except (httpx.ConnectError, httpx.ReadTimeout) as exc:
+            # Network-level blips are always transient.
+            return PublishResult(ok=False, error=f"Network: {exc}", transient=True)
         except Exception as exc:
             log.exception("Unexpected IG publish failure")
             return PublishResult(ok=False, error=f"Unexpected: {exc}")

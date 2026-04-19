@@ -24,9 +24,10 @@ Threads (base URL is `graph.threads.net`, same OAuth scheme):
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 
 import httpx
+
+from app.errors import AuthError, RateLimitError, TransientError, ValidationError
 
 log = logging.getLogger("platforms.meta")
 
@@ -38,18 +39,57 @@ THREADS_BASE = "https://graph.threads.net/v1.0"
 # Meta error codes that indicate rate-limiting / temporary throttling.
 # Reference: https://developers.facebook.com/docs/graph-api/overview/rate-limiting
 _RATE_LIMIT_CODES = {"4", "17", "32", "613"}
+# Access-token expired / user revoked session / OAuth bad.
+# 190 covers the common "invalid access_token" + sub-code family; 102/104
+# are session / user-mismatch.
+_AUTH_CODES = {"102", "104", "190", "200", "10"}
+# Payload-shape / permission errors that won't succeed on retry.
+_VALIDATION_CODES = {"100", "803", "3", "1487"}
 
 
-@dataclass
 class MetaError(Exception):
-    status: int
-    code: str
-    message: str
-    retry_after: int | None = None  # Seconds; None if not rate-limited.
+    """Base Graph / Threads API error.
 
-    def __str__(self) -> str:
+    Classified subclasses below mix in the generic `AutoposterError` hierarchy
+    so callers can write `except TransientError` / `except AuthError` and catch
+    problems across all platforms, not just Meta.
+    """
+
+    def __init__(
+        self,
+        status: int,
+        code: str,
+        message: str,
+        retry_after: int | None = None,
+    ) -> None:
+        self.status = status
+        self.code = code
+        self.message = message
+        self.retry_after = retry_after
+        super().__init__(self._format())
+
+    def _format(self) -> str:
         suffix = f" (retry after {self.retry_after}s)" if self.retry_after else ""
         return f"[{self.status}/{self.code}] {self.message}{suffix}"
+
+
+class MetaRateLimitError(MetaError, RateLimitError):
+    def __init__(self, status: int, code: str, message: str, retry_after: int | None) -> None:
+        MetaError.__init__(self, status, code, message, retry_after)
+        # RateLimitError stores retry_after_sec — alias the field across both names.
+        self.retry_after_sec = retry_after
+
+
+class MetaAuthError(MetaError, AuthError):
+    pass
+
+
+class MetaValidationError(MetaError, ValidationError):
+    pass
+
+
+class MetaTransientError(MetaError, TransientError):
+    pass
 
 
 def _parse_retry_after(resp: httpx.Response) -> int | None:
@@ -65,26 +105,43 @@ def _parse_retry_after(resp: httpx.Response) -> int | None:
         return None
 
 
+def _classify(status: int, code: str, retry_after: int | None):
+    """Return the MetaError subclass that best fits `status` + `code`.
+
+    Precedence: rate limit → auth → validation → transient (5xx) → plain
+    MetaError. String comparisons only — Meta returns codes as ints, but we
+    normalise upstream.
+    """
+    if status == 429 or code in _RATE_LIMIT_CODES:
+        return MetaRateLimitError
+    if code in _AUTH_CODES:
+        return MetaAuthError
+    if code in _VALIDATION_CODES:
+        return MetaValidationError
+    if status >= 500:
+        return MetaTransientError
+    return MetaError
+
+
 def _raise_if_error(resp: httpx.Response) -> dict:
     try:
         data = resp.json()
     except ValueError:
-        raise MetaError(
-            status=resp.status_code,
-            code="invalid_json",
-            message=resp.text[:200],
-            retry_after=_parse_retry_after(resp) if resp.status_code == 429 else None,
-        )
+        retry_after = _parse_retry_after(resp) if resp.status_code == 429 else None
+        cls = _classify(resp.status_code, "invalid_json", retry_after)
+        if cls is MetaRateLimitError:
+            raise cls(resp.status_code, "invalid_json", resp.text[:200], retry_after)
+        raise cls(resp.status_code, "invalid_json", resp.text[:200])
     if resp.status_code >= 400 or (isinstance(data, dict) and data.get("error")):
         err = data.get("error") if isinstance(data, dict) else {}
         code = str(err.get("code", "unknown")) if err else "http_error"
         is_rate_limited = resp.status_code == 429 or code in _RATE_LIMIT_CODES
-        raise MetaError(
-            status=resp.status_code,
-            code=code,
-            message=(err.get("message") if err else None) or resp.text[:300],
-            retry_after=_parse_retry_after(resp) if is_rate_limited else None,
-        )
+        retry_after = _parse_retry_after(resp) if is_rate_limited else None
+        message = (err.get("message") if err else None) or resp.text[:300]
+        cls = _classify(resp.status_code, code, retry_after)
+        if cls is MetaRateLimitError:
+            raise cls(resp.status_code, code, message, retry_after)
+        raise cls(resp.status_code, code, message)
     return data
 
 

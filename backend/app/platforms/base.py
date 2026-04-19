@@ -26,6 +26,13 @@ class PublishResult:
     external_post_id: str | None = None
     error: str | None = None
     raw: dict | None = None
+    # Set by adapters when the failure is retry-worthy (network, 5xx, rate
+    # limit). The scheduler uses this to decide between backoff-and-retry
+    # and marking the variant permanently FAILED.
+    transient: bool = False
+    # Suggested wait (seconds) from the upstream Retry-After header. Only set
+    # for rate-limit failures; None means "use the default backoff ladder".
+    retry_after_sec: int | None = None
 
 
 class Platform(ABC):

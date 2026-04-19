@@ -1,10 +1,11 @@
 """Database session factory. Sync for simplicity — we're local, low-volume."""
+import logging
 import time
 from pathlib import Path
 from threading import Lock
 
 from fastapi import Depends
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -41,8 +42,36 @@ def _sqlite_pragma(dbapi_conn, _conn_record):
 
 
 def init_db() -> None:
-    """Create tables if they don't exist. For v1, no Alembic — just create_all."""
+    """Create tables if they don't exist. For v1, no Alembic — just create_all.
+
+    Also runs the tiny, idempotent "poor man's migration" below so deployments
+    upgrading from older versions pick up new columns without a full Alembic
+    baseline. When phase 4 lands, this goes away.
+    """
     Base.metadata.create_all(engine)
+    _ensure_post_variant_retry_columns()
+
+
+_log = logging.getLogger("db.session")
+
+
+def _ensure_post_variant_retry_columns() -> None:
+    """Add `retry_count` / `retry_at` to post_variants if an older SQLite DB
+    predates them. SQLite-only — Postgres users get an error steering them
+    towards proper migrations.
+    """
+    if not settings.db_url.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(post_variants)").fetchall()}
+        if not existing:
+            return  # Table doesn't exist yet — create_all will build it with the columns.
+        if "retry_count" not in existing:
+            _log.info("Adding post_variants.retry_count via ALTER TABLE")
+            conn.execute(text("ALTER TABLE post_variants ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"))
+        if "retry_at" not in existing:
+            _log.info("Adding post_variants.retry_at via ALTER TABLE")
+            conn.execute(text("ALTER TABLE post_variants ADD COLUMN retry_at DATETIME"))
 
 
 def get_session() -> Session:

@@ -17,6 +17,7 @@ import logging
 import re
 from typing import ClassVar
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.db.models import Post, Target
@@ -124,7 +125,11 @@ class ThreadsPlatform(Platform):
                 creation_id=creation_id,
             )
         except meta_graph.MetaError as exc:
-            return PublishResult(ok=False, error=str(exc))
+            from app.platforms.instagram import _failure_from_meta
+
+            return _failure_from_meta(exc)
+        except (httpx.ConnectError, httpx.ReadTimeout) as exc:
+            return PublishResult(ok=False, error=f"Network: {exc}", transient=True)
         except Exception as exc:
             log.exception("Unexpected Threads publish failure")
             return PublishResult(ok=False, error=f"Unexpected: {exc}")

@@ -218,6 +218,12 @@ class PostVariant(Base):
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     external_post_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 3 retry bookkeeping. `retry_count` is bumped on every transient
+    # failure; the scheduler gives up once it passes MAX_RETRIES. `retry_at`
+    # is the earliest time the scheduler may retry — variants with a future
+    # retry_at are skipped in the tick loop.
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    retry_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     post: Mapped[Post] = relationship(back_populates="variants")
 

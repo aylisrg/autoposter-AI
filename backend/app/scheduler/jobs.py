@@ -8,15 +8,26 @@ so that a large batch doesn't hit FB in the same second.
 
 Idempotency: posts are promoted to POSTING before dispatch so a second tick
 doesn't grab the same row. Per-day rate limiting uses `max_posts_per_day`.
+
+Transient-vs-permanent retry:
+- A variant whose publish fails with `result.transient=True` (network, 5xx,
+  rate limit) is requeued: `retry_count` bumps, `retry_at` gets set to
+  `now + backoff(retry_count)`, and `status` returns to SCHEDULED.
+- Permanent failures (auth, validation, unknown error) land at FAILED
+  immediately.
+- After `MAX_RETRIES` transient attempts we give up and mark FAILED so the
+  variant doesn't cycle forever.
+- Backoff ladder: 60 s, 300 s, 900 s (total ~20 min). Respects the upstream
+  `retry_after_sec` when provided (rate-limit responses).
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 import random
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
@@ -24,8 +35,34 @@ from app.db import SessionLocal
 from app.db.models import Post, PostStatus, PostVariant, Target
 from app.platforms.registry import get_platform
 from app.services import humanizer as hz
+from app.services.rate_limiter import rate_limiter
 
 log = logging.getLogger("scheduler.jobs")
+
+
+MAX_RETRIES = 3
+# Backoff at attempt 1 / 2 / 3 (seconds). After attempt 3 fails, we stop.
+_BACKOFF_LADDER = (60, 300, 900)
+
+
+def _backoff_seconds(retry_count: int, retry_after_hint: int | None) -> int:
+    """Pick the wait before the next retry attempt.
+
+    `retry_count` is the count AFTER the failing attempt (>=1). If the
+    upstream gave us a Retry-After we honour at least that much.
+    """
+    idx = min(max(retry_count - 1, 0), len(_BACKOFF_LADDER) - 1)
+    ladder = _BACKOFF_LADDER[idx]
+    if retry_after_hint is None:
+        return ladder
+    return max(ladder, retry_after_hint)
+
+
+def _as_utc(dt: datetime | None) -> datetime | None:
+    """SQLite strips timezone on round-trip; re-attach UTC for comparisons."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
 
 
 def _posts_today(db) -> int:
@@ -40,6 +77,30 @@ def _posts_today(db) -> int:
     )
 
 
+def _defer_for_retry(
+    variant: PostVariant, error: str, retry_after_hint: int | None
+) -> None:
+    """Transient failure: bump retry_count, set retry_at, keep SCHEDULED so the
+    next tick re-picks this variant. Caller is responsible for db.commit().
+    """
+    variant.retry_count += 1
+    wait = _backoff_seconds(variant.retry_count, retry_after_hint)
+    variant.retry_at = datetime.now(UTC) + timedelta(seconds=wait)
+    variant.status = PostStatus.SCHEDULED
+    variant.error = f"[transient #{variant.retry_count}] {error} (retry in {wait}s)"
+    log.info(
+        "Variant %s transient fail #%d — retry at %s",
+        variant.id,
+        variant.retry_count,
+        variant.retry_at.isoformat(),
+    )
+
+
+def _mark_failed(variant: PostVariant, error: str) -> None:
+    variant.status = PostStatus.FAILED
+    variant.error = error
+
+
 async def _publish_one(
     post: Post,
     variant: PostVariant,
@@ -49,9 +110,20 @@ async def _publish_one(
 ) -> None:
     platform = get_platform(target.platform_id, db=db)
     if platform is None:
-        variant.status = PostStatus.FAILED
-        variant.error = f"Unknown platform_id: {target.platform_id}"
+        _mark_failed(variant, f"Unknown platform_id: {target.platform_id}")
         return
+
+    # Client-side rate limit — refuse to dispatch if we'd exceed the per-platform
+    # window. Treat a throttle as a transient failure: the variant stays
+    # SCHEDULED and retries after `wait` seconds.
+    wait = rate_limiter.acquire(target.platform_id)
+    if wait is not None:
+        if variant.retry_count < MAX_RETRIES:
+            _defer_for_retry(variant, "client-side rate limit", retry_after_hint=wait)
+        else:
+            _mark_failed(variant, "client-side rate limit (max retries exceeded)")
+        return
+
     synthetic = Post(
         id=post.id,
         post_type=post.post_type,
@@ -64,8 +136,9 @@ async def _publish_one(
     try:
         result = await platform.publish(synthetic, target, humanizer=humanizer_config)
     except Exception as exc:  # noqa: BLE001
-        variant.status = PostStatus.FAILED
-        variant.error = f"Exception: {exc}"
+        # Unknown unhandled exception — treat as non-transient; classified
+        # errors come back via PublishResult.transient.
+        _mark_failed(variant, f"Exception: {exc}")
         return
 
     if result.ok:
@@ -73,9 +146,17 @@ async def _publish_one(
         variant.external_post_id = result.external_post_id
         variant.posted_at = datetime.now(UTC)
         variant.error = None
+        variant.retry_at = None  # Clear so it doesn't linger in "waiting" state.
+        return
+
+    error_msg = result.error or "Unknown failure"
+    if result.transient and variant.retry_count < MAX_RETRIES:
+        _defer_for_retry(variant, error_msg, result.retry_after_sec)
     else:
-        variant.status = PostStatus.FAILED
-        variant.error = result.error
+        _mark_failed(
+            variant,
+            error_msg if not result.transient else f"{error_msg} (max retries exceeded)",
+        )
 
 
 async def publish_due_posts() -> None:
@@ -124,10 +205,13 @@ async def publish_due_posts() -> None:
             post.status = PostStatus.POSTING
             db.commit()
 
+            # Only pick variants that are due — skip anything parked by a
+            # prior transient failure whose retry_at is still in the future.
             pending_variants = [
                 v
                 for v in post.variants
                 if v.status in (PostStatus.SCHEDULED, PostStatus.DRAFT)
+                and (v.retry_at is None or _as_utc(v.retry_at) <= now)
             ]
 
             aborted_due_to_pause = False
