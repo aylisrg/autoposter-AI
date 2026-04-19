@@ -2,6 +2,7 @@
 from fastapi import APIRouter
 
 from app.api import (
+    ab_tests,
     analytics,
     auth,
     business_profile,
@@ -29,5 +30,6 @@ api_router.include_router(humanizer.router)
 api_router.include_router(analytics.router)
 api_router.include_router(meta_oauth.router)
 api_router.include_router(platform_credentials.router)
+api_router.include_router(ab_tests.router)
 
 __all__ = ["api_router"]

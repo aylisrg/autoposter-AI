@@ -186,6 +186,7 @@ class PostVariantOut(BaseModel):
     posted_at: datetime | None
     external_post_id: str | None
     error: str | None
+    ab_arm: str | None = None
 
 
 class PostOut(BaseModel):
