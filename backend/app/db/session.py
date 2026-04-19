@@ -1,14 +1,17 @@
 """Database session factory. Sync for simplicity — we're local, low-volume."""
+import logging
 import time
 from pathlib import Path
 from threading import Lock
 
 from fastapi import Depends
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.db.models import Base, BusinessProfile
+
+log = logging.getLogger(__name__)
 
 # Ensure data dir exists for SQLite
 if settings.db_url.startswith("sqlite"):
@@ -40,9 +43,49 @@ def _sqlite_pragma(dbapi_conn, _conn_record):
         cur.close()
 
 
+_ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
+
+
+def _alembic_config():
+    """Build an Alembic Config pointing at `backend/alembic.ini`.
+
+    We pass the already-built `engine` via `config.attributes` so migrations
+    execute on the same Connection the app uses. That's essential for
+    in-memory SQLite and for tests that monkeypatch `engine` — spawning a
+    fresh engine from the URL would target a different (empty) database.
+    """
+    from alembic.config import Config as AlembicConfig
+
+    cfg = AlembicConfig(str(_ALEMBIC_INI))
+    cfg.attributes["engine"] = engine
+    return cfg
+
+
 def init_db() -> None:
-    """Create tables if they don't exist. For v1, no Alembic — just create_all."""
-    Base.metadata.create_all(engine)
+    """Bring the schema up to `head` via Alembic.
+
+    Two paths:
+
+    - Fresh DB (no tables, or only the `alembic_version` table): run
+      ``upgrade head`` which applies every revision from 0001.
+    - Pre-Alembic DB (tables exist but `alembic_version` is missing):
+      the schema was created by an earlier `Base.metadata.create_all` build.
+      We ``stamp head`` instead — the tables match `head` already; rerunning
+      all CREATE TABLEs would fail on "table already exists". Subsequent
+      boots will see `alembic_version` and take the upgrade path for any
+      new revisions.
+    """
+    from alembic import command
+
+    cfg = _alembic_config()
+
+    insp = inspect(engine)
+    existing = set(insp.get_table_names())
+    if existing and "alembic_version" not in existing:
+        log.info("init_db: pre-Alembic schema detected, stamping head")
+        command.stamp(cfg, "head")
+    else:
+        command.upgrade(cfg, "head")
 
 
 def get_session() -> Session:
