@@ -151,6 +151,9 @@ class Post(Base):
     text: Mapped[str] = mapped_column(Text)
     image_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     image_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    media_asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("media_assets.id"), nullable=True
+    )
     first_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     cta_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
@@ -295,9 +298,52 @@ class PlanSlot(Base):
     rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[SlotStatus] = mapped_column(Enum(SlotStatus), default=SlotStatus.PLANNED)
     post_id: Mapped[int | None] = mapped_column(ForeignKey("posts.id"), nullable=True)
+    media_asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("media_assets.id"), nullable=True
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     plan: Mapped[ContentPlan] = relationship(back_populates="slots")
     post: Mapped[Post | None] = relationship()
+    media_asset: Mapped[MediaAsset | None] = relationship(foreign_keys=[media_asset_id])
+
+
+# ---------- Media Library (M2) ----------
+
+
+class MediaKind(str, enum.Enum):
+    IMAGE = "image"
+    VIDEO = "video"
+
+
+class MediaAsset(Base):
+    """Uploaded image/video with AI-derived metadata.
+
+    `local_path` is relative to `data/` (so we serve via the /static mount). We keep
+    the raw file; derived transcodes (IG-aspect, Reels-length, etc.) land in
+    `variants_json` as {"ig_square": "...", "reels_9x16": "..."}.
+
+    `ai_tags` is a shortlist of semantic tags Claude Vision produced (e.g.
+    ["basil", "windowsill", "morning-light"]). `ai_caption` is a one-sentence
+    description. Together they drive the top-3 suggestion feature for PlanSlots.
+    """
+    __tablename__ = "media_assets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[MediaKind] = mapped_column(Enum(MediaKind), default=MediaKind.IMAGE)
+    mime: Mapped[str] = mapped_column(String(100))
+    local_path: Mapped[str] = mapped_column(String(500))
+    filename: Mapped[str] = mapped_column(String(255))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_caption: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    tags_user: Mapped[list[str]] = mapped_column(JSON, default=list)
+    variants_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    tagged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

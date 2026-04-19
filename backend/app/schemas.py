@@ -14,6 +14,7 @@ from app.db.models import (
     EmojiDensity,
     FeedbackRating,
     Length,
+    MediaKind,
     PlanStatus,
     PostStatus,
     PostType,
@@ -135,6 +136,7 @@ class PostOut(BaseModel):
     text: str
     image_url: str | None
     image_prompt: str | None
+    media_asset_id: int | None = None
     first_comment: str | None
     cta_url: str | None
     scheduled_for: datetime | None
@@ -188,10 +190,52 @@ class FeedbackOut(BaseModel):
 class MediaUploadOut(BaseModel):
     """Returned after a successful /api/media/upload."""
 
+    id: int
     url: str  # relative to backend root, e.g. "/static/images/uploads/abc.png"
     filename: str
     mime: str
     size_bytes: int
+    width: int | None = None
+    height: int | None = None
+
+
+class MediaAssetOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    kind: MediaKind
+    mime: str
+    local_path: str
+    filename: str
+    size_bytes: int
+    width: int | None
+    height: int | None
+    duration_sec: float | None
+    ai_caption: str | None
+    ai_tags: list[str]
+    tags_user: list[str]
+    tagged_at: datetime | None
+    created_at: datetime
+
+    @property
+    def url(self) -> str:
+        return f"/static/{self.local_path}"
+
+
+class MediaAssetPatch(BaseModel):
+    tags_user: list[str] | None = None
+    ai_caption: str | None = None
+
+
+class MediaTagResult(BaseModel):
+    caption: str
+    tags: list[str]
+    cost_usd: float
+
+
+class MediaSuggestion(BaseModel):
+    asset: MediaAssetOut
+    score: float
 
 
 # ---------- Status ----------
@@ -220,6 +264,7 @@ class PlanSlotOut(BaseModel):
     rationale: str | None
     status: SlotStatus
     post_id: int | None
+    media_asset_id: int | None = None
     notes: str | None
     created_at: datetime
 

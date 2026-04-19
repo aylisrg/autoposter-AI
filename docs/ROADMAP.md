@@ -92,12 +92,12 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M2 — Media Library
 
-- [ ] Модель `MediaAsset` (path, mime, dimensions, ai_tags, embedding)
-- [ ] Upload endpoint с tus-протоколом (resumable upload)
-- [ ] AI tagging при upload (Claude Vision)
-- [ ] Транскод видео для IG/Threads (ffmpeg)
-- [ ] UI: галерея + drag-n-drop в слоты + auto-suggest top-3 по embeddings
-- [ ] Verification: 10 фото + 2 видео → авто-привязка к слотам
+- [x] Модель `MediaAsset` (path, mime, dimensions, ai_tags, ai_caption)
+- [x] Upload endpoint: multipart + Pillow для dimensions (tus отложен — single-user localhost)
+- [x] AI tagging при upload (Claude Vision) — caption + 3-8 tags
+- [~] Транскод видео для IG/Threads (ffmpeg) — отложено до M7 (video upload тоже)
+- [x] UI: галерея + auto-suggest top-3 по tag-overlap в slot inspector
+- [x] Verification: 11 pytest + ручной flow upload → tag → attach
 
 ### M3 — Targets Agent
 

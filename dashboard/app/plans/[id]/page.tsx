@@ -5,15 +5,21 @@ import Link from "next/link";
 import {
   ApiError,
   ContentPlan,
+  MediaAsset,
   PlanSlot,
   PostType,
+  attachMediaToSlot,
   chatPlan,
   createSlot,
   deleteSlot,
   generatePostFromSlot,
   getPlan,
   patchSlot,
+  suggestMediaForSlot,
 } from "@/lib/api";
+
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8787";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -355,6 +361,7 @@ export default function PlanDetailPage({
               onPatch={(p) => handleSlotPatch(selectedSlot.id, p)}
               onDelete={() => handleSlotDelete(selectedSlot.id)}
               onGenerate={() => handleGeneratePost(selectedSlot.id)}
+              onAttached={() => refresh()}
             />
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -431,24 +438,40 @@ function SlotEditor({
   onPatch,
   onDelete,
   onGenerate,
+  onAttached,
 }: {
   slot: PlanSlot;
   onPatch: (p: Parameters<typeof patchSlot>[1]) => void;
   onDelete: () => void;
   onGenerate: () => void;
+  onAttached: () => void;
 }) {
   const [when, setWhen] = useState(toLocalDateTimeInput(slot.scheduled_for));
   const [postType, setPostType] = useState(slot.post_type);
   const [topicHint, setTopicHint] = useState(slot.topic_hint ?? "");
   const [notes, setNotes] = useState(slot.notes ?? "");
   const [busy, setBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<
+    { asset: MediaAsset; score: number }[]
+  >([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
 
   useEffect(() => {
     setWhen(toLocalDateTimeInput(slot.scheduled_for));
     setPostType(slot.post_type);
     setTopicHint(slot.topic_hint ?? "");
     setNotes(slot.notes ?? "");
-  }, [slot]);
+    setLoadingSuggestions(true);
+    suggestMediaForSlot(slot.id, 3)
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]))
+      .finally(() => setLoadingSuggestions(false));
+  }, [slot.id]);
+
+  const handleAttach = async (assetId: number) => {
+    await attachMediaToSlot(assetId, slot.id);
+    onAttached();
+  };
 
   const save = async () => {
     setBusy(true);
@@ -516,6 +539,39 @@ function SlotEditor({
           </Link>
         </div>
       )}
+      <div className="border-t pt-3 mt-3">
+        <Label className="text-xs">Suggested media</Label>
+        {loadingSuggestions ? (
+          <p className="text-xs text-muted-foreground">Checking…</p>
+        ) : suggestions.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {slot.media_asset_id
+              ? "Image already attached."
+              : "No matches. Tag assets in the Library first."}
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-2 mt-1">
+            {suggestions.map(({ asset, score }) => (
+              <button
+                key={asset.id}
+                type="button"
+                onClick={() => handleAttach(asset.id)}
+                className={`rounded overflow-hidden border hover:ring-2 hover:ring-primary transition ${
+                  slot.media_asset_id === asset.id ? "ring-2 ring-primary" : ""
+                }`}
+                title={`${asset.ai_caption ?? asset.filename} — score ${score}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`${API_BASE}/static/${asset.local_path}`}
+                  alt=""
+                  className="w-full aspect-square object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="flex gap-2 flex-wrap">
         <Button onClick={save} disabled={busy} size="sm">
           Save

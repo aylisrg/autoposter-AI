@@ -7,6 +7,7 @@ import {
   Calendar,
   CalendarDays,
   Home,
+  Image as ImageIcon,
   ListChecks,
   PenSquare,
   Users,
@@ -16,6 +17,7 @@ const NAV = [
   { href: "/profile", label: "Business Profile", icon: Home },
   { href: "/targets", label: "Targets", icon: Users },
   { href: "/plans", label: "Content Plans", icon: CalendarDays },
+  { href: "/library", label: "Media Library", icon: ImageIcon },
   { href: "/compose", label: "Compose", icon: PenSquare },
   { href: "/queue", label: "Queue", icon: ListChecks },
 ];

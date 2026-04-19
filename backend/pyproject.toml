@@ -21,6 +21,8 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "python-multipart>=0.0.12",
     "aiosqlite>=0.20",
+    "Pillow>=10.4",
+    "cryptography>=43.0",
 ]
 
 [project.optional-dependencies]

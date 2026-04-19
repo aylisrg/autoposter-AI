@@ -274,9 +274,17 @@ export const sendFeedback = (payload: {
 
 // ---------- Media ----------
 
-export async function uploadMedia(
-  file: File,
-): Promise<{ url: string; filename: string; mime: string; size_bytes: number }> {
+export interface MediaUploadResult {
+  id: number;
+  url: string;
+  filename: string;
+  mime: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+}
+
+export async function uploadMedia(file: File): Promise<MediaUploadResult> {
   const form = new FormData();
   form.append("file", file);
   const resp = await fetch(`${BASE}/api/media/upload`, {
@@ -288,6 +296,50 @@ export async function uploadMedia(
   }
   return resp.json();
 }
+
+export interface MediaAsset {
+  id: number;
+  kind: "image" | "video";
+  mime: string;
+  local_path: string;
+  filename: string;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+  duration_sec: number | null;
+  ai_caption: string | null;
+  ai_tags: string[];
+  tags_user: string[];
+  tagged_at: string | null;
+  created_at: string;
+}
+
+export const listMedia = () => request<MediaAsset[]>("/api/media");
+export const getMedia = (id: number) => request<MediaAsset>(`/api/media/${id}`);
+export const deleteMedia = (id: number) =>
+  request<void>(`/api/media/${id}`, { method: "DELETE" });
+
+export const patchMedia = (id: number, patch: { tags_user?: string[] }) =>
+  request<MediaAsset>(`/api/media/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+export const tagMedia = (id: number) =>
+  request<{ caption: string; tags: string[]; cost_usd: number }>(
+    `/api/media/${id}/tag`,
+    { method: "POST" },
+  );
+
+export const attachMediaToSlot = (assetId: number, slotId: number) =>
+  request<MediaAsset>(`/api/media/${assetId}/attach-to-slot/${slotId}`, {
+    method: "POST",
+  });
+
+export const suggestMediaForSlot = (slotId: number, limit = 3) =>
+  request<{ asset: MediaAsset; score: number }[]>(
+    `/api/media/suggest-for-slot/${slotId}?limit=${limit}`,
+  );
 
 // ---------- Content Plans (M1) ----------
 
