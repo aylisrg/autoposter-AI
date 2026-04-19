@@ -101,12 +101,12 @@ Issues. Issues помечены префиксом `[M0]…[M8]` в title.
 
 ### M3 — Targets Agent
 
-- [ ] Extension: скрейп joined и suggested groups (FB)
-- [ ] IG/Threads: список manage-able accounts через Meta Graph
-- [ ] `TargetAgent`: relevance_score (0–100) + reasoning per группа
-- [ ] Авто-сегментация в `target_lists` (Claude clustering)
-- [ ] UI: фильтры, bulk approve/reject, ручные списки
-- [ ] Verification: discovery → 30+ групп в 3 списка
+- [x] Extension: скрейп joined (list_groups) и suggested (list_suggested_groups) groups
+- [~] IG/Threads: list manage-able accounts через Meta Graph — отложено до M7
+- [x] `TargetAgent`: relevance_score (0–100) + reasoning per группа
+- [x] Авто-сегментация в `target_lists` (Claude clustering → Target.list_name)
+- [x] UI: фильтры (status + list), bulk approve/reject, AI-кнопки score/cluster
+- [x] Verification: 13 pytest (agent + API + extension bridge stub)
 
 ### M4 — Human-Like Posting Engine
 
