@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
@@ -26,6 +26,13 @@ from app.platforms.registry import get_platform
 from app.services import humanizer as hz
 
 log = logging.getLogger("scheduler.jobs")
+
+
+# Exponential backoff for transient publish failures. One entry per retry:
+# first retry 60s after the initial failure, then 5 min, then 15 min. A
+# variant that still fails on the fourth attempt is marked FAILED for good
+# (no amount of retrying is going to fix a broken target).
+_RETRY_BACKOFF_SEC: tuple[int, ...] = (60, 5 * 60, 15 * 60)
 
 
 def _posts_today(db) -> int:
@@ -40,6 +47,32 @@ def _posts_today(db) -> int:
     )
 
 
+def _schedule_or_fail(variant: PostVariant, result_error: str, retry_after: int | None) -> None:
+    """Common transient-failure bookkeeping.
+
+    Increments `attempt_count` and either schedules another retry (status
+    stays SCHEDULED, `next_retry_at` bumped) or marks the variant terminally
+    FAILED when we've burned through `_RETRY_BACKOFF_SEC`. We prefer the
+    platform's `retry_after` hint over our default backoff when it's given.
+    """
+    variant.attempt_count = (variant.attempt_count or 0) + 1
+    variant.error = result_error
+    if variant.attempt_count > len(_RETRY_BACKOFF_SEC):
+        variant.status = PostStatus.FAILED
+        variant.next_retry_at = None
+        return
+    default_delay = _RETRY_BACKOFF_SEC[variant.attempt_count - 1]
+    delay_sec = retry_after if retry_after is not None else default_delay
+    variant.status = PostStatus.SCHEDULED
+    variant.next_retry_at = datetime.now(UTC) + timedelta(seconds=delay_sec)
+    log.info(
+        "Variant %d publish failed (attempt %d); retry in %ds",
+        variant.id,
+        variant.attempt_count,
+        delay_sec,
+    )
+
+
 async def _publish_one(
     post: Post,
     variant: PostVariant,
@@ -49,8 +82,10 @@ async def _publish_one(
 ) -> None:
     platform = get_platform(target.platform_id, db=db)
     if platform is None:
+        # Misconfigured target — no retry will fix this. Terminal.
         variant.status = PostStatus.FAILED
         variant.error = f"Unknown platform_id: {target.platform_id}"
+        variant.next_retry_at = None
         return
     synthetic = Post(
         id=post.id,
@@ -64,8 +99,10 @@ async def _publish_one(
     try:
         result = await platform.publish(synthetic, target, humanizer=humanizer_config)
     except Exception as exc:  # noqa: BLE001
-        variant.status = PostStatus.FAILED
-        variant.error = f"Exception: {exc}"
+        # Adapter raised instead of returning a PublishResult. Unknown failure
+        # mode — treat as transient (retries are cheap; the alternative is
+        # burning a post on a one-off network blip).
+        _schedule_or_fail(variant, f"Exception: {exc}", retry_after=None)
         return
 
     if result.ok:
@@ -73,9 +110,16 @@ async def _publish_one(
         variant.external_post_id = result.external_post_id
         variant.posted_at = datetime.now(UTC)
         variant.error = None
+        variant.next_retry_at = None
+        return
+
+    if result.transient:
+        _schedule_or_fail(variant, result.error or "", retry_after=result.retry_after)
     else:
         variant.status = PostStatus.FAILED
         variant.error = result.error
+        variant.next_retry_at = None
+        variant.attempt_count = (variant.attempt_count or 0) + 1
 
 
 async def publish_due_posts() -> None:
@@ -128,6 +172,7 @@ async def publish_due_posts() -> None:
                 v
                 for v in post.variants
                 if v.status in (PostStatus.SCHEDULED, PostStatus.DRAFT)
+                and (v.next_retry_at is None or v.next_retry_at <= now)
             ]
 
             aborted_due_to_pause = False

@@ -144,10 +144,17 @@ class InstagramPlatform(Platform):
                 creation_id=creation_id,
             )
         except meta_graph.MetaError as exc:
-            return PublishResult(ok=False, error=str(exc))
+            classified = meta_graph.classify_meta_error(exc)
+            return PublishResult(
+                ok=False,
+                error=str(exc),
+                transient=classified.transient,
+                retry_after=getattr(classified, "retry_after", None),
+            )
         except Exception as exc:
             log.exception("Unexpected IG publish failure")
-            return PublishResult(ok=False, error=f"Unexpected: {exc}")
+            # Unknown exception — treat as transient so a retry has a chance.
+            return PublishResult(ok=False, error=f"Unexpected: {exc}", transient=True)
 
         return PublishResult(
             ok=True,

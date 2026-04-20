@@ -26,6 +26,12 @@ class PublishResult:
     external_post_id: str | None = None
     error: str | None = None
     raw: dict | None = None
+    # Retry hints — populated when ok=False. Scheduler consumes these to decide
+    # whether to enqueue a retry or mark the variant terminally FAILED.
+    # `transient=True` means the error is worth retrying; `retry_after` is the
+    # platform's suggested delay in seconds (None = use default backoff).
+    transient: bool = False
+    retry_after: int | None = None
 
 
 class Platform(ABC):

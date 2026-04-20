@@ -187,6 +187,11 @@ class PostVariantOut(BaseModel):
     external_post_id: str | None
     error: str | None
     ab_arm: str | None = None
+    # Retry bookkeeping surfaced so the dashboard can show "retry in 4m20s"
+    # instead of a bare FAILED badge for a variant that's just waiting out
+    # its backoff window.
+    attempt_count: int = 0
+    next_retry_at: datetime | None = None
 
 
 class PostOut(BaseModel):

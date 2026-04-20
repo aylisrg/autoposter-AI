@@ -137,10 +137,18 @@ class LinkedInPlatform(Platform):
                 )
                 image_urn = init["image_urn"]
             except linkedin_api.LinkedInError as exc:
-                return PublishResult(ok=False, error=f"Image upload failed: {exc}")
+                classified = linkedin_api.classify_linkedin_error(exc)
+                return PublishResult(
+                    ok=False,
+                    error=f"Image upload failed: {exc}",
+                    transient=classified.transient,
+                    retry_after=getattr(classified, "retry_after", None),
+                )
             except Exception as exc:
                 log.exception("Unexpected LinkedIn image upload failure")
-                return PublishResult(ok=False, error=f"Image upload: {exc}")
+                return PublishResult(
+                    ok=False, error=f"Image upload: {exc}", transient=True
+                )
         elif post.image_url:
             # Non-public URL (localhost / file://) — drop rather than fail so
             # the text still gets out.
@@ -154,10 +162,16 @@ class LinkedInPlatform(Platform):
                 image_urn=image_urn,
             )
         except linkedin_api.LinkedInError as exc:
-            return PublishResult(ok=False, error=str(exc))
+            classified = linkedin_api.classify_linkedin_error(exc)
+            return PublishResult(
+                ok=False,
+                error=str(exc),
+                transient=classified.transient,
+                retry_after=getattr(classified, "retry_after", None),
+            )
         except Exception as exc:
             log.exception("Unexpected LinkedIn publish failure")
-            return PublishResult(ok=False, error=f"Unexpected: {exc}")
+            return PublishResult(ok=False, error=f"Unexpected: {exc}", transient=True)
 
         return PublishResult(
             ok=True,
