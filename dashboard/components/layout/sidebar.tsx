@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   BarChart3,
+  Briefcase,
   Calendar,
   CalendarDays,
   CheckSquare,
@@ -18,7 +19,8 @@ import {
 } from "lucide-react";
 
 const NAV = [
-  { href: "/profile", label: "Business Profile", icon: Home },
+  { href: "/", label: "Home", icon: Home },
+  { href: "/profile", label: "Business Profile", icon: Briefcase },
   { href: "/targets", label: "Targets", icon: Users },
   { href: "/plans", label: "Content Plans", icon: CalendarDays },
   { href: "/library", label: "Media Library", icon: ImageIcon },

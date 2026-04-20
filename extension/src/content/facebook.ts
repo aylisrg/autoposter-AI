@@ -149,6 +149,21 @@ const LABELS = {
     "подтверждение безопасности",
     "confirm your identity",
   ],
+  // FB renders a prominent CTA when the current user is NOT a member of the
+  // group they're viewing. The composer is hidden in that case, so matching
+  // this label gives us a clearer error than "composer_trigger_not_found".
+  joinGroup: [
+    "join group",
+    "join this group",
+    "ask to join",
+    "request to join",
+    "вступить в группу",
+    "запросить вступление",
+    "unirse al grupo",
+    "solicitar unirse",
+    "gruppe beitreten",
+    "beitritt anfragen",
+  ],
 } as const;
 
 function detectLocale(): string {
@@ -179,6 +194,14 @@ async function publishPost(
   // 1. Find the composer trigger ("Write something...").
   const trigger = await waitFor(() => findComposerTrigger(), 15000);
   if (!trigger) {
+    // Most common cause: user isn't a member of the group. FB hides the
+    // composer entirely and shows a "Join group" CTA instead. Surface that
+    // as a specific, actionable error so the dashboard can explain.
+    if (isGroupPage() && findJoinGroupButton()) {
+      throw new Error(
+        "not_a_group_member: this account isn't a member of the group — join it first (or accept the pending request)",
+      );
+    }
     throw new Error(
       `composer_trigger_not_found: locale=${detectLocale()} url=${location.pathname}`,
     );
@@ -309,6 +332,24 @@ function findPhotoVideoButton(): HTMLElement | null {
   for (const b of buttons) {
     const label = (b.getAttribute("aria-label") ?? b.textContent ?? "").trim();
     if (matchesLabel(label, LABELS.photoVideoButton)) return b;
+  }
+  return null;
+}
+
+function isGroupPage(): boolean {
+  return /^\/groups\/[^/]+/.test(location.pathname);
+}
+
+function findJoinGroupButton(): HTMLElement | null {
+  // Search only visible role=button elements — FB sometimes keeps stale DOM
+  // nodes from previous navigations; restricting to the main scope avoids
+  // false positives from a cached page preview.
+  const scope =
+    document.querySelector<HTMLElement>('[role="main"]') ?? document.body;
+  const buttons = scope.querySelectorAll<HTMLElement>('[role="button"]');
+  for (const b of buttons) {
+    const label = (b.getAttribute("aria-label") ?? b.textContent ?? "").trim();
+    if (matchesLabel(label, LABELS.joinGroup)) return b;
   }
   return null;
 }
@@ -709,6 +750,7 @@ type SmokeReport = {
   is_group_page: boolean;
   is_logged_in: boolean;
   checkpoint_detected: boolean;
+  is_group_member: boolean | null;
   composer_trigger: boolean;
   composer_editor_when_open: boolean;
   post_button_when_open: boolean;
@@ -745,12 +787,23 @@ async function runSmoke(): Promise<SmokeReport> {
     );
   }
 
+  // Membership: only meaningful if we're actually on a group page. Composer
+  // presence is the positive signal; Join button presence is the negative.
+  let isMember: boolean | null = null;
+  if (isGroupPage) {
+    const hasComposer = !!findComposerTrigger();
+    const hasJoin = !!findJoinGroupButton();
+    if (hasComposer) isMember = true;
+    else if (hasJoin) isMember = false;
+  }
+
   const report: SmokeReport = {
     locale: detectLocale(),
     url,
     is_group_page: isGroupPage,
     is_logged_in: isLoggedIn,
     checkpoint_detected: checkpoint,
+    is_group_member: isMember,
     composer_trigger: !!findComposerTrigger(),
     composer_editor_when_open: false,
     post_button_when_open: false,
@@ -762,7 +815,11 @@ async function runSmoke(): Promise<SmokeReport> {
     warnings,
   };
 
-  if (!report.composer_trigger && isGroupPage && !checkpoint) {
+  if (isGroupPage && isMember === false) {
+    warnings.push(
+      "not_a_group_member: posting will fail — join the group (or accept pending request) first",
+    );
+  } else if (!report.composer_trigger && isGroupPage && !checkpoint) {
     warnings.push("composer_trigger_missing: selectors may be stale");
   }
 
