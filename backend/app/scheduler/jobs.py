@@ -266,6 +266,34 @@ async def daily_backup_tick() -> None:
         log.exception("daily_backup_tick crashed")
 
 
+async def refresh_tokens_tick() -> None:
+    """Daily. Refresh Meta long-lived tokens that are due to expire soon.
+
+    Runs synchronously in a worker thread — the HTTP calls to Meta are short
+    and the credential set is tiny (typically 2 rows). Any bad credential is
+    logged but doesn't stop the tick.
+    """
+    from app.services import token_refresh
+
+    def _run() -> token_refresh.RefreshResult:
+        db = SessionLocal()
+        try:
+            return token_refresh.refresh_expiring(db)
+        finally:
+            db.close()
+
+    try:
+        result = await asyncio.to_thread(_run)
+        if result.refreshed or result.failed:
+            log.info(
+                "refresh_tokens_tick: refreshed=%d failed=%d",
+                result.refreshed,
+                result.failed,
+            )
+    except Exception:
+        log.exception("refresh_tokens_tick crashed")
+
+
 async def collect_follower_snapshots_tick() -> None:
     """Daily. One follower-count snapshot per connected Meta credential."""
     from app.services import followers

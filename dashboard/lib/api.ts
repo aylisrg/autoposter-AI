@@ -794,6 +794,7 @@ export interface PlatformCredential {
   account_id: string;
   username: string | null;
   token_expires_at: string | null;
+  days_until_expiry: number | null;
   extra: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -829,6 +830,35 @@ export const listPlatformCredentials = () =>
 
 export const deletePlatformCredential = (id: number) =>
   request<void>(`/api/platform-credentials/${id}`, { method: "DELETE" });
+
+export const refreshPlatformCredential = (id: number) =>
+  request<PlatformCredential>(`/api/platform-credentials/${id}/refresh`, {
+    method: "POST",
+  });
+
+// ---------- Extension smoke (fail-loud diagnostics) ----------
+
+export interface ExtensionSmokeReport {
+  locale: string;
+  url: string;
+  is_group_page: boolean;
+  is_logged_in: boolean;
+  checkpoint_detected: boolean;
+  composer_trigger: boolean;
+  composer_editor_when_open: boolean;
+  post_button_when_open: boolean;
+  photo_video_button_when_open: boolean;
+  comment_button_on_article: boolean;
+  comment_editor_on_article: boolean;
+  groups_detected: number;
+  articles_detected: number;
+  warnings: string[];
+}
+
+export const runExtensionSmoke = () =>
+  request<{ ok: true; report: ExtensionSmokeReport }>("/api/extension/smoke", {
+    method: "POST",
+  });
 
 // ---------- M8: Auth ----------
 

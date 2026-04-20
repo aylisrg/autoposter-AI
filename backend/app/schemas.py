@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.db.models import (
     EmojiDensity,
@@ -586,9 +586,27 @@ class PlatformCredentialOut(BaseModel):
     account_id: str
     username: str | None
     token_expires_at: datetime | None
+    # Derived. Null if we don't have an expiry recorded (legacy rows). Negative
+    # means the token has already expired; dashboard uses this to pick a badge
+    # colour (red <=0, amber <=7, green otherwise).
+    days_until_expiry: int | None = None
     extra: dict
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _compute_days_until_expiry(self) -> "PlatformCredentialOut":
+        if self.token_expires_at is None:
+            return self
+        from datetime import UTC, datetime as _dt
+
+        expires = self.token_expires_at
+        # SQLite stores datetimes naive but we always persist UTC; normalise.
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=UTC)
+        delta = expires - _dt.now(UTC)
+        self.days_until_expiry = int(delta.total_seconds() // 86400)
+        return self
 
 
 class MetaOAuthUrlOut(BaseModel):

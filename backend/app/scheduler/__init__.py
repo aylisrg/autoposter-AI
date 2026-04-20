@@ -34,6 +34,7 @@ class SchedulerSingleton:
             collect_metrics_tick,
             daily_backup_tick,
             publish_due_posts,
+            refresh_tokens_tick,
             weekly_analyst_tick,
         )
 
@@ -89,10 +90,21 @@ class SchedulerSingleton:
             coalesce=True,
             max_instances=1,
         )
+        # Daily Meta token refresh — 04:00 UTC, after the backup. Refreshes
+        # any credential whose token expires within the next 7 days.
+        self._impl.add_job(
+            refresh_tokens_tick,
+            trigger="cron",
+            hour=4,
+            minute=0,
+            id="refresh_tokens",
+            coalesce=True,
+            max_instances=1,
+        )
         self._impl.start()
         log.info(
             "Scheduler started (publish 30s, metrics 1h, analyst Sun 21:00, "
-            "followers 02:00, backup 03:00)"
+            "followers 02:00, backup 03:00, refresh-tokens 04:00)"
         )
 
     def shutdown(self, wait: bool = False) -> None:
