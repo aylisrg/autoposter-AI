@@ -74,14 +74,17 @@ class FacebookPlatform(Platform):
                 external_post_id=response.get("post_url") or response.get("post_id"),
                 raw=response,
             )
-        # Extension error strings are opaque — default to transient so a flaky
-        # page load or throttle gets another shot. User sees the retry cadence
-        # in the UI and can intervene if it persists.
+        err = response.get("error", "Unknown error from extension")
+        # Some errors are user-actionable — retrying is pointless until the
+        # user intervenes (e.g. join the group, pass FB's checkpoint). Mark
+        # those as non-transient so the queue stops re-queuing them.
+        permanent_markers = ("not_a_group_member", "checkpoint_detected")
+        is_permanent = any(marker in err for marker in permanent_markers)
         return PublishResult(
             ok=False,
-            error=response.get("error", "Unknown error from extension"),
+            error=err,
             raw=response,
-            transient=True,
+            transient=not is_permanent,
         )
 
     async def fetch_metrics(self, external_post_id: str) -> dict | None:

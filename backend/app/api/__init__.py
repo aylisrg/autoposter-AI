@@ -7,6 +7,7 @@ from app.api import (
     auth,
     business_profile,
     calendar_ics,
+    dashboard,
     feedback,
     followers,
     health,
@@ -23,6 +24,7 @@ from app.api import (
 api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(health.router)
+api_router.include_router(dashboard.router)
 api_router.include_router(business_profile.router)
 api_router.include_router(targets.router)
 api_router.include_router(posts.router)

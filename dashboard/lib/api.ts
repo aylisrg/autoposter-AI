@@ -844,6 +844,8 @@ export interface ExtensionSmokeReport {
   is_group_page: boolean;
   is_logged_in: boolean;
   checkpoint_detected: boolean;
+  // null = not on a group page (or couldn't tell)
+  is_group_member: boolean | null;
   composer_trigger: boolean;
   composer_editor_when_open: boolean;
   post_button_when_open: boolean;
@@ -859,6 +861,84 @@ export const runExtensionSmoke = () =>
   request<{ ok: true; report: ExtensionSmokeReport }>("/api/extension/smoke", {
     method: "POST",
   });
+
+// ---------- Dashboard overview (guided home) ----------
+
+export type NextStepId =
+  | "connect_extension"
+  | "create_profile"
+  | "connect_platform"
+  | "add_targets"
+  | "generate_plan"
+  | "review_drafts"
+  | "resolve_failures"
+  | "refresh_tokens"
+  | "all_set";
+
+export interface NextStep {
+  id: NextStepId;
+  title: string;
+  description: string;
+  cta_label: string;
+  cta_href: string;
+}
+
+export interface SetupBlock {
+  backend_ok: boolean;
+  extension_connected: boolean;
+  scheduler_running: boolean;
+  has_business_profile: boolean;
+  platforms_connected: number;
+  platforms_expiring_soon: number;
+  targets_active: number;
+  plans_active: number;
+}
+
+export interface PublishingNow {
+  variant_id: number;
+  post_id: number;
+  target_name: string;
+  platform_id: string;
+  started_at: string | null;
+}
+
+export interface NextScheduled {
+  variant_id: number;
+  post_id: number;
+  target_name: string;
+  platform_id: string;
+  scheduled_for: string;
+}
+
+export interface RecentFailure {
+  variant_id: number;
+  post_id: number;
+  target_name: string;
+  platform_id: string;
+  error: string;
+  updated_at: string;
+  kind: "permanent" | "transient";
+}
+
+export interface ActivityBlock {
+  publishing_now: PublishingNow | null;
+  next_scheduled: NextScheduled | null;
+  pending_review: number;
+  failed_last_24h: number;
+  scheduled_total: number;
+  posted_today: number;
+  drafts: number;
+  recent_failures: RecentFailure[];
+}
+
+export interface DashboardOverview {
+  next_step: NextStep;
+  setup: SetupBlock;
+  activity: ActivityBlock;
+}
+
+export const getDashboardOverview = () =>
+  request<DashboardOverview>("/api/dashboard/overview");
 
 // ---------- M8: Auth ----------
 

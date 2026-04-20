@@ -381,6 +381,15 @@ function SmokeReportView({ report }: { report: ExtensionSmokeReport }) {
       value: !report.checkpoint_detected,
       critical: true,
     },
+  ];
+  if (report.is_group_page && report.is_group_member !== null) {
+    checks.push({
+      label: "Member of this group",
+      value: report.is_group_member,
+      critical: true,
+    });
+  }
+  checks.push(
     { label: "Composer trigger found", value: report.composer_trigger, critical: true },
     { label: "Composer editor when open", value: report.composer_editor_when_open },
     { label: "Post button when open", value: report.post_button_when_open },
@@ -390,7 +399,7 @@ function SmokeReportView({ report }: { report: ExtensionSmokeReport }) {
     },
     { label: "Comment button on article", value: report.comment_button_on_article },
     { label: "Comment editor on article", value: report.comment_editor_on_article },
-  ];
+  );
   return (
     <div className="space-y-2 rounded-lg border p-3 text-sm">
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
