@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AuthGate } from "@/components/auth-gate";
 import { Sidebar } from "@/components/layout/sidebar";
 import { StatusBar } from "@/components/layout/status-bar";
+import { HelpDrawer } from "@/components/layout/help-drawer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default function RootLayout({
               {children}
             </main>
           </div>
+          <HelpDrawer />
         </AuthGate>
       </body>
     </html>

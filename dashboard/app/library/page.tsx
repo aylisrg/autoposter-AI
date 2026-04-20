@@ -15,6 +15,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageHeader } from "@/components/ui/page-header";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   ImageIcon,
   Loader2,
@@ -97,7 +100,8 @@ export default function LibraryPage() {
   };
 
   const handleDelete = async (assetId: number) => {
-    if (!confirm("Delete this asset? The file will be removed from disk.")) return;
+    if (!confirm("Delete this image? The file is removed from disk."))
+      return;
     await deleteMedia(assetId);
     setSelected(null);
     refresh();
@@ -110,16 +114,11 @@ export default function LibraryPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <ImageIcon className="h-6 w-6" />
-          Media Library
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Drop images here. Tag with Claude Vision to get auto-suggestions for
-          content slots.
-        </p>
-      </div>
+      <PageHeader
+        title="Media Library"
+        description="Pictures you've uploaded, ready for reuse. Tag them with AI and autoposter will suggest the best match for each planned post."
+        icon={ImageIcon}
+      />
 
       {error && (
         <div className="rounded-md bg-destructive/10 text-destructive text-sm p-3">
@@ -147,10 +146,10 @@ export default function LibraryPage() {
           <Upload className="h-6 w-6 text-muted-foreground" />
         )}
         <div className="mt-2 font-medium">
-          {uploading ? "Uploading…" : "Drop images or click to upload"}
+          {uploading ? "Uploading…" : "Drop images here, or click to browse"}
         </div>
         <div className="text-xs text-muted-foreground mt-1">
-          JPEG / PNG / WebP / GIF, max 10 MB each
+          JPEG, PNG, WebP, or GIF · up to 10 MB each
         </div>
       </Card>
 
@@ -160,9 +159,13 @@ export default function LibraryPage() {
             Loading…
           </p>
         ) : assets.length === 0 ? (
-          <p className="text-sm text-muted-foreground col-span-full">
-            No assets yet. Upload your first image above.
-          </p>
+          <div className="col-span-full">
+            <EmptyState
+              icon={ImageIcon}
+              title="No images yet"
+              description="Upload your first picture above. Once you tag them with AI, autoposter picks the best match for each planned post."
+            />
+          </div>
         ) : (
           assets.map((a) => (
             <Card
@@ -180,7 +183,7 @@ export default function LibraryPage() {
               />
               <CardContent className="p-2 space-y-1">
                 <div className="text-xs text-muted-foreground line-clamp-2 min-h-[2.5em]">
-                  {a.ai_caption ?? "Not tagged yet"}
+                  {a.ai_caption ?? "No AI caption yet"}
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {(a.ai_tags ?? []).slice(0, 3).map((t) => (
@@ -216,9 +219,17 @@ export default function LibraryPage() {
                 {(selected.size_bytes / 1024).toFixed(0)} KB
               </div>
               <div className="text-sm mt-1 line-clamp-2">
-                {selected.ai_caption ?? "Run AI tag to get a caption."}
+                {selected.ai_caption ?? "No caption yet — tap Tag with AI."}
               </div>
-              <div className="flex flex-wrap gap-1 mt-1">
+              <div className="flex flex-wrap gap-1 mt-1 items-center">
+                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                  AI tags
+                  <InfoPopover>
+                    Claude Vision reads the image and picks short, generic
+                    tags (e.g. "kitchen", "close-up", "hero-shot"). The
+                    planner uses these to match images to post topics.
+                  </InfoPopover>
+                </span>
                 {(selected.ai_tags ?? []).map((t) => (
                   <Badge key={t} variant="secondary" className="text-[10px]">
                     {t}
@@ -239,6 +250,7 @@ export default function LibraryPage() {
                 variant="secondary"
                 onClick={() => handleTag(selected.id)}
                 disabled={taggingIds.has(selected.id)}
+                title="Claude Vision describes the image (~$0.003)"
               >
                 {taggingIds.has(selected.id) ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -303,11 +315,18 @@ function UserTagsEditor({
   return (
     <div className="mt-2 flex gap-2 items-end">
       <div className="flex-1">
-        <Label className="text-[10px]">Your tags (comma-separated)</Label>
+        <Label className="text-[10px] flex items-center gap-0.5">
+          Your tags (comma-separated)
+          <InfoPopover>
+            Your own keywords — brand names, campaign names, shoot dates.
+            They're searched alongside the AI tags when matching images to
+            posts.
+          </InfoPopover>
+        </Label>
         <Input
           value={val}
           onChange={(e) => setVal(e.target.value)}
-          placeholder="launch, hero-image"
+          placeholder="launch, hero-image, june-campaign"
           className="h-7 text-xs"
         />
       </div>

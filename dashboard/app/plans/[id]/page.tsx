@@ -27,6 +27,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { POST_TYPE_OPTIONS, labelForPostType } from "@/lib/post-types";
 import {
   ArrowLeft,
   Loader2,
@@ -37,17 +39,19 @@ import {
   Wand2,
 } from "lucide-react";
 
-const POST_TYPES: { value: PostType; label: string }[] = [
-  { value: "informative", label: "Informative" },
-  { value: "soft_sell", label: "Soft sell" },
-  { value: "hard_sell", label: "Hard sell" },
-  { value: "engagement", label: "Engagement" },
-  { value: "story", label: "Story" },
-  { value: "motivational", label: "Motivational" },
-  { value: "testimonial", label: "Testimonial" },
-  { value: "hot_take", label: "Hot take" },
-  { value: "seasonal", label: "Seasonal" },
-];
+const POST_TYPES = POST_TYPE_OPTIONS as {
+  value: PostType;
+  label: string;
+  description?: string;
+}[];
+
+const SLOT_STATUS_LABEL: Record<string, string> = {
+  planned: "just planned",
+  drafted: "draft ready",
+  scheduled: "scheduled",
+  posted: "posted",
+  skipped: "skipped",
+};
 
 const TYPE_COLORS: Record<PostType, string> = {
   informative: "bg-blue-500/20 border-blue-500/40 text-blue-700 dark:text-blue-300",
@@ -255,16 +259,26 @@ export default function PlanDetailPage({
               <ArrowLeft className="h-3 w-3" />
               Back
             </Link>
-            <h1 className="text-xl font-bold">{plan.name}</h1>
+            <h1 className="text-xl font-bold flex items-center gap-1">
+              {plan.name}
+              <InfoPopover label="What's a slot?">
+                A slot is a planned spot for a future post — a date, a time,
+                and what angle to take. Nothing is drafted yet. Tap{" "}
+                <span className="font-medium">Generate post</span> when
+                you're ready.
+              </InfoPopover>
+            </h1>
             <div className="text-xs text-muted-foreground mt-1">
               {new Date(plan.start_date).toLocaleDateString()} –{" "}
               {new Date(plan.end_date).toLocaleDateString()} ·{" "}
-              {plan.slots.length} slots · cost $
+              {plan.slots.length} slots · AI cost so far $
               {plan.generation_cost_usd.toFixed(4)}
             </div>
           </div>
           <Badge variant="outline">{plan.status}</Badge>
         </div>
+
+        <ColorLegend />
 
         {error && (
           <div className="mb-4 rounded-md bg-destructive/10 text-destructive text-sm p-3">
@@ -304,7 +318,7 @@ export default function PlanDetailPage({
               <CardContent className="p-3 pt-1 space-y-1">
                 {slots.length === 0 && (
                   <div className="text-xs text-muted-foreground italic">
-                    Drop a slot here or + to add
+                    Nothing planned. Drag a slot or tap + to add.
                   </div>
                 )}
                 {slots.map((slot) => (
@@ -331,7 +345,7 @@ export default function PlanDetailPage({
                     )}
                     {slot.status !== "planned" && (
                       <Badge variant="secondary" className="mt-1 text-[10px]">
-                        {slot.status}
+                        {SLOT_STATUS_LABEL[slot.status] ?? slot.status}
                       </Badge>
                     )}
                   </button>
@@ -365,7 +379,7 @@ export default function PlanDetailPage({
             />
           ) : (
             <p className="text-sm text-muted-foreground">
-              Click a slot to edit, or drag across days to reschedule.
+              Tap a slot to edit it, or drag it to another day to reschedule.
             </p>
           )}
         </div>
@@ -374,12 +388,13 @@ export default function PlanDetailPage({
         <div className="flex-1 flex flex-col">
           <div className="px-4 py-2 border-b text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-2">
             <Wand2 className="h-3 w-3" />
-            Chat with Planner
+            Chat with the planner
           </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-2 text-sm">
             {plan.chat_history.length === 0 && (
               <p className="text-muted-foreground text-xs italic">
-                Ask the Planner to adjust the mix, move times, or add slots.
+                Ask in plain English — "swap Wednesday for Thursday", "add
+                two hot-takes next week", "space these out more".
               </p>
             )}
             {plan.chat_history.map((t, i) => (
@@ -429,6 +444,22 @@ export default function PlanDetailPage({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ColorLegend() {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <span>Colors by angle:</span>
+      {POST_TYPES.map((t) => (
+        <span
+          key={t.value}
+          className={`rounded border px-1.5 py-0.5 ${TYPE_COLORS[t.value as PostType]}`}
+        >
+          {t.label}
+        </span>
+      ))}
     </div>
   );
 }
@@ -528,26 +559,33 @@ function SlotEditor({
       </div>
       {slot.rationale && (
         <div className="text-xs text-muted-foreground italic">
-          Planner rationale: {slot.rationale}
+          Why the planner chose this: {slot.rationale}
         </div>
       )}
       {slot.post_id && (
         <div className="text-xs">
-          Post drafted:{" "}
+          Draft ready:{" "}
           <Link href="/queue" className="text-primary underline">
-            view in queue
+            open in Posts
           </Link>
         </div>
       )}
       <div className="border-t pt-3 mt-3">
-        <Label className="text-xs">Suggested media</Label>
+        <Label className="text-xs flex items-center gap-1">
+          Image ideas
+          <InfoPopover>
+            Autoposter scores images in your Media Library against this
+            slot's topic hint and suggests the best three. Tap one to
+            attach it to the future post.
+          </InfoPopover>
+        </Label>
         {loadingSuggestions ? (
-          <p className="text-xs text-muted-foreground">Checking…</p>
+          <p className="text-xs text-muted-foreground">Looking…</p>
         ) : suggestions.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             {slot.media_asset_id
               ? "Image already attached."
-              : "No matches. Tag assets in the Library first."}
+              : "No matches yet. Tag a few images in the Library first."}
           </p>
         ) : (
           <div className="grid grid-cols-3 gap-2 mt-1">
@@ -581,9 +619,10 @@ function SlotEditor({
           disabled={busy || !!slot.post_id}
           size="sm"
           variant="secondary"
+          title={slot.post_id ? "Already drafted" : "Draft with AI (~$0.01)"}
         >
           <Sparkles className="h-3 w-3" />
-          {slot.post_id ? "Generated" : "Generate post"}
+          {slot.post_id ? "Drafted" : "Draft with AI"}
         </Button>
         <Button
           onClick={onDelete}

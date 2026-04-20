@@ -474,6 +474,7 @@ export interface PlanSlot {
   rationale: string | null;
   status: SlotStatus;
   post_id: number | null;
+  media_asset_id: number | null;
   notes: string | null;
   created_at: string;
 }
