@@ -1,7 +1,9 @@
 """Health + status endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_session
@@ -54,3 +56,34 @@ def run_backup_now() -> dict:
 
     path = backups.run_backup()
     return {"ok": True, "path": str(path), "size_bytes": path.stat().st_size}
+
+
+@router.post("/api/extension/smoke")
+async def extension_smoke() -> dict:
+    """Run the FB content-script smoke test through the WebSocket bridge.
+
+    Lets the dashboard surface "selectors healthy?" without needing DevTools.
+    The extension must be connected AND on a facebook.com tab for this to
+    produce a useful report.
+    """
+    if not bridge.connected:
+        raise HTTPException(
+            status_code=503,
+            detail="Extension not connected. Load the extension and open facebook.com.",
+        )
+    try:
+        response = await bridge.request(
+            {"type": "smoke", "request_id": uuid.uuid4().hex},
+            timeout=30,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Extension did not respond within 30s (no FB tab open?)",
+        ) from exc
+    if not response.get("ok"):
+        raise HTTPException(
+            status_code=502,
+            detail=response.get("error", "Extension reported failure"),
+        )
+    return {"ok": True, "report": response.get("report", {})}

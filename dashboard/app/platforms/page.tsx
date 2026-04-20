@@ -17,16 +17,68 @@ import {
   deletePlatformCredential,
   getMetaOAuthUrl,
   listPlatformCredentials,
+  refreshPlatformCredential,
+  runExtensionSmoke,
+  type ExtensionSmokeReport,
   type PlatformCredential,
 } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { Link2, Plus, Trash2 } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Link2,
+  Plus,
+  RefreshCw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
+
+// Meta tokens live ~60 days. We surface the state in three buckets so the
+// user knows whether to worry: >14 days = safe (green), 1-14 = refresh soon
+// (amber), <=0 = already expired, publishes will 401 (red).
+type ExpiryBucket = "safe" | "soon" | "expired" | "unknown";
+
+function expiryBucket(days: number | null): ExpiryBucket {
+  if (days == null) return "unknown";
+  if (days <= 0) return "expired";
+  if (days <= 14) return "soon";
+  return "safe";
+}
+
+function expiryBadgeVariant(
+  bucket: ExpiryBucket,
+): "outline" | "success" | "warning" | "destructive" {
+  switch (bucket) {
+    case "safe":
+      return "success";
+    case "soon":
+      return "warning";
+    case "expired":
+      return "destructive";
+    default:
+      return "outline";
+  }
+}
+
+function expiryLabel(days: number | null): string {
+  if (days == null) return "expiry unknown";
+  if (days <= 0) return `expired ${-days}d ago`;
+  if (days === 1) return "expires tomorrow";
+  return `expires in ${days}d`;
+}
 
 export default function PlatformsPage() {
   const [creds, setCreds] = useState<PlatformCredential[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  const [smokeReport, setSmokeReport] = useState<ExtensionSmokeReport | null>(
+    null,
+  );
+  const [smokeError, setSmokeError] = useState<string | null>(null);
+  const [smokeRunning, setSmokeRunning] = useState(false);
   const [form, setForm] = useState<{
     platform_id: "instagram" | "threads";
     account_id: string;
@@ -90,6 +142,32 @@ export default function PlatformsPage() {
     if (!confirm("Disconnect this account?")) return;
     await deletePlatformCredential(id);
     refresh();
+  };
+
+  const refreshToken = async (id: number) => {
+    setRefreshingId(id);
+    try {
+      await refreshPlatformCredential(id);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Refresh failed");
+    } finally {
+      setRefreshingId(null);
+    }
+  };
+
+  const runSmoke = async () => {
+    setSmokeRunning(true);
+    setSmokeError(null);
+    setSmokeReport(null);
+    try {
+      const { report } = await runExtensionSmoke();
+      setSmokeReport(report);
+    } catch (e) {
+      setSmokeError(e instanceof Error ? e.message : "Smoke test failed");
+    } finally {
+      setSmokeRunning(false);
+    }
   };
 
   return (
@@ -198,6 +276,30 @@ export default function PlatformsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Facebook extension health</CardTitle>
+          <CardDescription>
+            Probes whether the content script can still find FB's composer,
+            post button, and comment editor. Run this on a{" "}
+            <code>facebook.com/groups/...</code> tab when publishes start
+            silently failing — FB changes its DOM periodically.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button onClick={runSmoke} disabled={smokeRunning} variant="outline">
+            <Activity
+              className={`mr-2 h-4 w-4 ${smokeRunning ? "animate-pulse" : ""}`}
+            />
+            {smokeRunning ? "Probing…" : "Run smoke test"}
+          </Button>
+          {smokeError && (
+            <p className="text-sm text-destructive">{smokeError}</p>
+          )}
+          {smokeReport && <SmokeReportView report={smokeReport} />}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Connected accounts</CardTitle>
         </CardHeader>
         <CardContent>
@@ -209,35 +311,123 @@ export default function PlatformsPage() {
             </p>
           ) : (
             <div className="space-y-2">
-              {creds.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between rounded-lg border p-3 text-sm"
-                >
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{c.platform_id}</Badge>
-                      <span className="font-medium">
-                        {c.username || c.account_id}
+              {creds.map((c) => {
+                const bucket = expiryBucket(c.days_until_expiry);
+                const isMeta =
+                  c.platform_id === "instagram" ||
+                  c.platform_id === "threads";
+                return (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between rounded-lg border p-3 text-sm"
+                  >
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{c.platform_id}</Badge>
+                        <span className="font-medium">
+                          {c.username || c.account_id}
+                        </span>
+                        {isMeta && (
+                          <Badge variant={expiryBadgeVariant(bucket)}>
+                            {expiryLabel(c.days_until_expiry)}
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        id {c.account_id} · updated {formatDate(c.updated_at)}
                       </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
-                      id {c.account_id} · updated {formatDate(c.updated_at)}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      {isMeta && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => refreshToken(c.id)}
+                          disabled={refreshingId === c.id}
+                          title="Refresh Meta token now"
+                        >
+                          <RefreshCw
+                            className={`h-4 w-4 ${
+                              refreshingId === c.id ? "animate-spin" : ""
+                            }`}
+                          />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => remove(c.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => remove(c.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function SmokeReportView({ report }: { report: ExtensionSmokeReport }) {
+  const checks: Array<{ label: string; value: boolean; critical?: boolean }> = [
+    { label: "On a group page", value: report.is_group_page, critical: true },
+    { label: "Logged in", value: report.is_logged_in, critical: true },
+    {
+      label: "No checkpoint / captcha",
+      value: !report.checkpoint_detected,
+      critical: true,
+    },
+    { label: "Composer trigger found", value: report.composer_trigger, critical: true },
+    { label: "Composer editor when open", value: report.composer_editor_when_open },
+    { label: "Post button when open", value: report.post_button_when_open },
+    {
+      label: "Photo/Video button when open",
+      value: report.photo_video_button_when_open,
+    },
+    { label: "Comment button on article", value: report.comment_button_on_article },
+    { label: "Comment editor on article", value: report.comment_editor_on_article },
+  ];
+  return (
+    <div className="space-y-2 rounded-lg border p-3 text-sm">
+      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+        <span>locale: {report.locale}</span>
+        <span>·</span>
+        <span>articles: {report.articles_detected}</span>
+        <span>·</span>
+        <span>groups: {report.groups_detected}</span>
+      </div>
+      <ul className="space-y-1">
+        {checks.map((c) => (
+          <li key={c.label} className="flex items-center gap-2">
+            {c.value ? (
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+            ) : c.critical ? (
+              <XCircle className="h-4 w-4 text-destructive" />
+            ) : (
+              <AlertTriangle className="h-4 w-4 text-amber-500" />
+            )}
+            <span className={c.value ? "" : c.critical ? "text-destructive" : ""}>
+              {c.label}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {report.warnings.length > 0 && (
+        <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs">
+          <div className="mb-1 font-medium text-amber-600">Warnings</div>
+          <ul className="list-disc space-y-0.5 pl-5">
+            {report.warnings.map((w) => (
+              <li key={w} className="font-mono">
+                {w}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

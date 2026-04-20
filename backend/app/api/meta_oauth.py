@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -52,6 +53,25 @@ META_OAUTH_SCOPES = [
 META_LOGIN_URL = "https://www.facebook.com/v21.0/dialog/oauth"
 
 
+def _expires_at_from_payload(payload: dict) -> datetime | None:
+    """Map Meta's `expires_in` (seconds) onto an absolute UTC timestamp.
+
+    Short-lived tokens may omit `expires_in` entirely; long-lived tokens
+    return ~5_184_000 (60 days). We store None when we can't tell — the
+    refresh job simply skips those rows.
+    """
+    expires_in = payload.get("expires_in")
+    if not expires_in:
+        return None
+    try:
+        seconds = int(expires_in)
+    except (TypeError, ValueError):
+        return None
+    if seconds <= 0:
+        return None
+    return datetime.now(UTC) + timedelta(seconds=seconds)
+
+
 def _upsert_credential(
     db: Session,
     platform_id: str,
@@ -59,6 +79,7 @@ def _upsert_credential(
     access_token: str,
     username: str | None = None,
     extra: dict | None = None,
+    token_expires_at: datetime | None = None,
 ) -> PlatformCredential:
     """Insert or update a PlatformCredential row by (platform_id, account_id)."""
     row = (
@@ -78,6 +99,7 @@ def _upsert_credential(
             username=username,
             access_token=access_token,
             extra=extra or {},
+            token_expires_at=token_expires_at,
         )
         db.add(row)
     else:
@@ -90,6 +112,9 @@ def _upsert_credential(
         if extra is not None and row.extra != extra:
             row.extra = extra
             changed.append("extra")
+        if token_expires_at is not None and row.token_expires_at != token_expires_at:
+            row.token_expires_at = token_expires_at
+            changed.append("token_expires_at")
     db.commit()
     db.refresh(row)
     audit_event(
@@ -152,6 +177,7 @@ def oauth_callback(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     long_token: str = long["access_token"]
+    expires_at = _expires_at_from_payload(long)
 
     # Probe pages → pull out the first IG Business account id we find.
     ig_cred: PlatformCredential | None = None
@@ -176,6 +202,7 @@ def oauth_callback(
             access_token=long_token,
             username=page.get("name"),
             extra={"page_id": page.get("id"), "page_name": page.get("name")},
+            token_expires_at=expires_at,
         )
         break
 
@@ -187,6 +214,7 @@ def oauth_callback(
             platform_id="threads",
             account_id=settings.threads_user_id,
             access_token=long_token,
+            token_expires_at=expires_at,
         )
 
     msg_parts = []

@@ -128,6 +128,21 @@ const LABELS = {
     "foto/vídeo",
     "foto",
   ],
+  commentButton: [
+    "comment",
+    "leave a comment",
+    "комментировать",
+    "написать комментарий",
+    "comentar",
+    "kommentieren",
+  ],
+  commentComposer: [
+    "write a comment",
+    "write a public comment",
+    "напишите комментарий",
+    "escribe un comentario",
+    "schreibe einen kommentar",
+  ],
   checkpoint: [
     "please re-enter your password",
     "we'll send a login code",
@@ -152,7 +167,7 @@ function matchesLabel(value: string | null | undefined, set: readonly string[]):
 
 async function publishPost(
   msg: PublishMsg,
-): Promise<{ post_url?: string; post_id?: string }> {
+): Promise<{ post_url?: string; post_id?: string; comment_warning?: string }> {
   // 0. Fail fast if we're on a checkpoint / login screen.
   assertNotCheckpointed();
 
@@ -200,12 +215,30 @@ async function publishPost(
 
   // 7. Try to find the freshly posted item by first-line match.
   const firstLine = msg.text.split("\n")[0].slice(0, 40);
-  const permalink = await waitFor(() => findFreshPostPermalink(firstLine), 20000);
+  const article = await waitFor(() => findFreshPostArticle(firstLine), 20000);
+  const permalink = article ? extractPermalink(article) : null;
 
-  // 8. Optional first comment — left as a TODO for M1+ (requires opening
-  //    the comment composer on the fresh permalink).
+  // 8. Optional first comment. Best-effort — if the comment flow fails we
+  //    surface a warning but still consider the publish successful, because
+  //    the post itself already committed.
+  let comment_warning: string | undefined;
+  if (msg.first_comment && msg.first_comment.trim()) {
+    if (!article) {
+      comment_warning = "first_comment_skipped_no_article";
+    } else {
+      try {
+        await addFirstComment(article, msg.first_comment, hz);
+      } catch (err) {
+        comment_warning =
+          err instanceof Error ? err.message : String(err);
+      }
+    }
+  }
 
-  return { post_url: permalink ?? undefined };
+  return {
+    post_url: permalink ?? undefined,
+    comment_warning,
+  };
 }
 
 // ---------- Selectors ----------
@@ -291,18 +324,133 @@ function assertNotCheckpointed(): void {
 
 // ---------- Success verification ----------
 
-function findFreshPostPermalink(firstLine: string): string | null {
+function findFreshPostArticle(firstLine: string): HTMLElement | null {
   if (!firstLine) return null;
   const needle = firstLine.toLowerCase();
-  // FB feed items live under role=article. Permalinks look like `/groups/{id}/posts/{id}` or `/permalink/{id}`.
+  // FB feed items live under role=article. Match by innerText.
   const articles = document.querySelectorAll<HTMLElement>('div[role="article"]');
   for (const art of articles) {
     const text = (art.innerText || "").toLowerCase();
     if (!text.includes(needle)) continue;
-    const link = art.querySelector<HTMLAnchorElement>(
-      'a[href*="/posts/"], a[href*="/permalink/"], a[href*="/groups/"][href*="/permalink"]',
-    );
-    if (link?.href) return link.href;
+    return art;
+  }
+  return null;
+}
+
+function extractPermalink(article: HTMLElement): string | null {
+  // Permalinks look like `/groups/{id}/posts/{id}` or `/permalink/{id}`.
+  const link = article.querySelector<HTMLAnchorElement>(
+    'a[href*="/posts/"], a[href*="/permalink/"], a[href*="/groups/"][href*="/permalink"]',
+  );
+  return link?.href ?? null;
+}
+
+// ---------- First comment ----------
+
+async function addFirstComment(
+  article: HTMLElement,
+  text: string,
+  hz: HumanizerConfig,
+): Promise<void> {
+  article.scrollIntoView({ behavior: "smooth", block: "center" });
+  await sleep(600 + Math.random() * 600);
+
+  // The comment composer is often already rendered inline; if not, clicking
+  // the article's Comment button lazy-mounts it.
+  let editor = findCommentEditor(article);
+  if (!editor) {
+    const btn = findCommentButton(article);
+    if (!btn) throw new Error("comment_button_not_found");
+    await humanHover(btn, hz);
+    simulateClick(btn);
+    editor = await waitFor(() => findCommentEditor(article), 8000);
+  }
+  if (!editor) throw new Error("comment_editor_did_not_open");
+
+  editor.focus();
+  await humanType(editor, text, hz);
+  await sleep(400 + Math.random() * 600);
+
+  // FB comment submit: Enter inside the textbox. We send a full keydown chain
+  // so React commits the comment. A fallback path clicks an explicit submit
+  // button if one exists (some FB surfaces render a paper-plane icon).
+  editor.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+  editor.dispatchEvent(
+    new KeyboardEvent("keyup", {
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      which: 13,
+      bubbles: true,
+    }),
+  );
+
+  // Verify: the editor should empty within a few seconds.
+  const empty = await waitFor(
+    () => !editor!.textContent?.includes(text.slice(0, 20)),
+    8000,
+  );
+  if (!empty) {
+    const submit = findCommentSubmitButton(article);
+    if (submit) {
+      simulateClick(submit);
+      const empty2 = await waitFor(
+        () => !editor!.textContent?.includes(text.slice(0, 20)),
+        6000,
+      );
+      if (!empty2) throw new Error("comment_submit_did_not_clear_editor");
+    } else {
+      throw new Error("comment_submit_no_effect");
+    }
+  }
+}
+
+function findCommentButton(article: HTMLElement): HTMLElement | null {
+  const buttons = article.querySelectorAll<HTMLElement>('[role="button"]');
+  for (const b of buttons) {
+    const label = (b.getAttribute("aria-label") ?? b.textContent ?? "").trim();
+    if (matchesLabel(label, LABELS.commentButton)) return b;
+  }
+  return null;
+}
+
+function findCommentEditor(article: HTMLElement): HTMLElement | null {
+  // 1) Match by aria-label (most robust when FB localizes).
+  const labeled = article.querySelectorAll<HTMLElement>(
+    '[contenteditable="true"][role="textbox"][aria-label]',
+  );
+  for (const el of labeled) {
+    if (matchesLabel(el.getAttribute("aria-label"), LABELS.commentComposer)) {
+      return el;
+    }
+  }
+  // 2) Fallback: any contenteditable textbox inside the article (post
+  //    editor is already closed at this point, so anything remaining is the
+  //    comment composer).
+  return article.querySelector<HTMLElement>(
+    '[contenteditable="true"][role="textbox"]',
+  );
+}
+
+function findCommentSubmitButton(article: HTMLElement): HTMLElement | null {
+  const buttons = article.querySelectorAll<HTMLElement>('[role="button"]');
+  for (const b of buttons) {
+    const label = (b.getAttribute("aria-label") ?? "").toLowerCase();
+    if (label.includes("comment") && (label.includes("post") || label.includes("submit"))) {
+      return b;
+    }
+    if (label === "comment" || label === "отправить" || label === "enviar") {
+      return b;
+    }
   }
   return null;
 }
@@ -555,24 +703,68 @@ async function scrapePostMetrics(): Promise<ScrapedMetrics> {
 
 // ---------- Smoke test (popup-triggered) ----------
 
-async function runSmoke(): Promise<{
+type SmokeReport = {
   locale: string;
   url: string;
+  is_group_page: boolean;
+  is_logged_in: boolean;
+  checkpoint_detected: boolean;
   composer_trigger: boolean;
   composer_editor_when_open: boolean;
   post_button_when_open: boolean;
   photo_video_button_when_open: boolean;
+  comment_button_on_article: boolean;
+  comment_editor_on_article: boolean;
   groups_detected: number;
-}> {
-  const report = {
+  articles_detected: number;
+  warnings: string[];
+};
+
+async function runSmoke(): Promise<SmokeReport> {
+  const warnings: string[] = [];
+  const url = location.href;
+  const path = location.pathname;
+  const isGroupPage = /^\/groups\/[^/]+/.test(path);
+
+  // Checkpoint detection without throwing (runSmoke must never throw).
+  let checkpoint = false;
+  try {
+    assertNotCheckpointed();
+  } catch {
+    checkpoint = true;
+    warnings.push("checkpoint_detected");
+  }
+
+  // Logged-in heuristic: FB renders a "Your profile" shortcut for logged-in
+  // users; logged-out pages redirect to /login.
+  const isLoggedIn = !/login|checkpoint/i.test(path);
+
+  if (!isGroupPage) {
+    warnings.push(
+      `not_on_group_page: open facebook.com/groups/<id> before smoke (current=${path})`,
+    );
+  }
+
+  const report: SmokeReport = {
     locale: detectLocale(),
-    url: location.href,
+    url,
+    is_group_page: isGroupPage,
+    is_logged_in: isLoggedIn,
+    checkpoint_detected: checkpoint,
     composer_trigger: !!findComposerTrigger(),
     composer_editor_when_open: false,
     post_button_when_open: false,
     photo_video_button_when_open: false,
+    comment_button_on_article: false,
+    comment_editor_on_article: false,
     groups_detected: (await listGroups()).length,
+    articles_detected: document.querySelectorAll('div[role="article"]').length,
+    warnings,
   };
+
+  if (!report.composer_trigger && isGroupPage && !checkpoint) {
+    warnings.push("composer_trigger_missing: selectors may be stale");
+  }
 
   // If we can find the trigger, open the composer and probe inner controls.
   const trigger = findComposerTrigger();
@@ -582,12 +774,26 @@ async function runSmoke(): Promise<{
     report.composer_editor_when_open = !!findComposerEditor();
     report.post_button_when_open = !!findPostButton();
     report.photo_video_button_when_open = !!findPhotoVideoButton();
+    if (!report.composer_editor_when_open) {
+      warnings.push("composer_editor_not_found_after_open");
+    }
+    if (!report.post_button_when_open) {
+      warnings.push("post_button_not_found_after_open");
+    }
     // Try to close
     const dialog = findComposerDialog();
     dialog
       ?.querySelector<HTMLElement>('[aria-label="Close"], [aria-label="Закрыть"]')
       ?.click();
   }
+
+  // Probe comment wiring on whichever article is currently visible.
+  const firstArticle = document.querySelector<HTMLElement>('div[role="article"]');
+  if (firstArticle) {
+    report.comment_button_on_article = !!findCommentButton(firstArticle);
+    report.comment_editor_on_article = !!findCommentEditor(firstArticle);
+  }
+
   return report;
 }
 

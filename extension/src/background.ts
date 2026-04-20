@@ -102,7 +102,11 @@ async function handlePublish(msg: Record<string, unknown>): Promise<Record<strin
     humanizer: msg.humanizer,
   });
   if (!response?.ok) throw new Error(response?.error || "content script reported failure");
-  return { post_url: response.post_url, post_id: response.post_id };
+  return {
+    post_url: response.post_url,
+    post_id: response.post_id,
+    comment_warning: response.comment_warning,
+  };
 }
 
 async function handleListGroups(_msg: Record<string, unknown>): Promise<Record<string, unknown>> {

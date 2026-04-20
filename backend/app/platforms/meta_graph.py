@@ -149,6 +149,12 @@ def exchange_code_for_token(
 
 
 def long_lived_token(app_id: str, app_secret: str, short_token: str) -> dict:
+    """Exchange a short-lived token (or an existing long-lived one) for a fresh
+    ~60-day token. Meta accepts both inputs on the same endpoint — calling
+    this with an already-long-lived token is the official refresh path.
+    Response: ``{access_token, token_type, expires_in}`` where ``expires_in``
+    is seconds (typically ~5_184_000 ≈ 60 days).
+    """
     with httpx.Client(timeout=30) as c:
         resp = c.get(
             f"{GRAPH_BASE}/oauth/access_token",
