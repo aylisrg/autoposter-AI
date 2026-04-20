@@ -64,11 +64,30 @@ async function routeCommand(msg: Record<string, unknown>): Promise<Record<string
       return await handleListSuggestedGroups(msg);
     case "fetch_metrics":
       return await handleFetchMetrics(msg);
+    case "smoke":
+      return await handleSmoke();
     case "ping":
       return { pong: true };
     default:
       throw new Error(`Unknown command: ${type}`);
   }
+}
+
+async function handleSmoke(): Promise<Record<string, unknown>> {
+  // Smoke probes the DOM state of whatever FB page is currently open — we
+  // don't navigate anywhere, because the user is supposed to be on a group
+  // page where they want to verify the composer + membership.
+  const tabs = await chrome.tabs.query({ url: ["*://*.facebook.com/*"] });
+  if (tabs.length === 0 || !tabs[0].id) {
+    throw new Error(
+      "no_facebook_tab: open facebook.com (ideally the target group) and retry",
+    );
+  }
+  const response = await chrome.tabs.sendMessage(tabs[0].id, { type: "smoke" });
+  if (!response?.ok) {
+    throw new Error(response?.error || "smoke failed in content script");
+  }
+  return { report: response.report };
 }
 
 async function handleFetchMetrics(
