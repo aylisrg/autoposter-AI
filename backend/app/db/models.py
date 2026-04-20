@@ -221,6 +221,13 @@ class PostVariant(Base):
     # A/B test arm label (e.g. "control", "a", "b"). Null when the post isn't
     # part of a split test. Populated by POST /api/posts/{id}/ab-split.
     ab_arm: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    # Retry bookkeeping. `attempt_count` is the number of times we've tried to
+    # publish this variant (increments even on transient failures). When the
+    # scheduler defers a retry it sets `next_retry_at` to "now + backoff"; the
+    # publish tick query filters on it so a variant with a future next_retry_at
+    # is skipped. Null = no pending retry (either never failed or gave up).
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     post: Mapped[Post] = relationship(back_populates="variants")
 

@@ -193,6 +193,12 @@ export default function QueuePage() {
                               open
                             </a>
                           )}
+                          {v.next_retry_at && v.status === "scheduled" && (
+                            <span className="text-muted-foreground">
+                              retry #{v.attempt_count} at{" "}
+                              {formatDate(v.next_retry_at)}
+                            </span>
+                          )}
                           {v.error && (
                             <span className="text-destructive">
                               {v.error}

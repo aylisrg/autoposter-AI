@@ -28,6 +28,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.errors import AuthError, PlatformError, RateLimitError, TransientError, ValidationError
+
 log = logging.getLogger("platforms.meta")
 
 
@@ -38,6 +40,40 @@ THREADS_BASE = "https://graph.threads.net/v1.0"
 # Meta error codes that indicate rate-limiting / temporary throttling.
 # Reference: https://developers.facebook.com/docs/graph-api/overview/rate-limiting
 _RATE_LIMIT_CODES = {"4", "17", "32", "613"}
+
+# Meta error codes that mean "credentials are bad — re-auth required."
+# 102/190: OAuth/session expired or invalidated. 10/200/299: permission
+# errors that typically require re-consent.
+_AUTH_CODES = {"10", "102", "190", "200", "299"}
+
+# Codes that mean "the payload is wrong and retrying won't help."
+# 100: Invalid parameter. 368: action blocked (usually content policy).
+_VALIDATION_CODES = {"100", "368"}
+
+
+def classify_meta_error(exc: "MetaError") -> PlatformError:
+    """Translate a wire-level `MetaError` into the shared hierarchy.
+
+    The scheduler decides retry vs. fail from the class alone, so we collapse
+    Meta's hundreds of error codes into four buckets. Anything we don't
+    recognise defaults to `TransientError` — better to retry a handful of
+    times than silently burn a scheduled post on a transient hiccup we
+    didn't catalogue.
+    """
+    if exc.status == 429 or exc.code in _RATE_LIMIT_CODES:
+        return RateLimitError(str(exc), retry_after=exc.retry_after)
+    if exc.code in _AUTH_CODES:
+        return AuthError(str(exc))
+    if exc.code in _VALIDATION_CODES:
+        return ValidationError(str(exc))
+    if 500 <= exc.status <= 599:
+        return TransientError(str(exc))
+    # 4xx with an unrecognised code — treat as validation by default. A bad
+    # request that isn't rate-limiting or auth almost always means malformed
+    # input the user must fix (URL not reachable, image too big, etc).
+    if 400 <= exc.status <= 499:
+        return ValidationError(str(exc))
+    return TransientError(str(exc))
 
 
 @dataclass

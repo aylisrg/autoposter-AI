@@ -85,6 +85,8 @@ export interface PostVariant {
   posted_at: string | null;
   external_post_id: string | null;
   error: string | null;
+  attempt_count?: number;
+  next_retry_at?: string | null;
 }
 
 export interface Post {

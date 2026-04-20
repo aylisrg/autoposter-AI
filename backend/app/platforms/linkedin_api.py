@@ -28,6 +28,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from app.errors import AuthError, PlatformError, RateLimitError, TransientError, ValidationError
+
 log = logging.getLogger("platforms.linkedin")
 
 
@@ -45,9 +47,40 @@ class LinkedInError(Exception):
     status: int
     code: str
     message: str
+    retry_after: int | None = None  # seconds; None if not rate-limited
 
     def __str__(self) -> str:
-        return f"[{self.status}/{self.code}] {self.message}"
+        suffix = f" (retry after {self.retry_after}s)" if self.retry_after else ""
+        return f"[{self.status}/{self.code}] {self.message}{suffix}"
+
+
+def _parse_retry_after(resp: httpx.Response) -> int | None:
+    """LinkedIn sometimes returns Retry-After on 429 — seconds only."""
+    header = resp.headers.get("retry-after")
+    if not header:
+        return None
+    try:
+        return max(0, int(header.strip()))
+    except ValueError:
+        return None
+
+
+def classify_linkedin_error(exc: "LinkedInError") -> PlatformError:
+    """Collapse LinkedInError into the shared hierarchy.
+
+    LinkedIn's error taxonomy is smaller than Meta's: 401 = auth, 429 =
+    rate limit, 400/422 = validation, 5xx = transient. Anything else we
+    treat as transient so a blip doesn't burn a scheduled post.
+    """
+    if exc.status == 429:
+        return RateLimitError(str(exc), retry_after=exc.retry_after)
+    if exc.status in (401, 403):
+        return AuthError(str(exc))
+    if exc.status in (400, 422):
+        return ValidationError(str(exc))
+    if 500 <= exc.status <= 599:
+        return TransientError(str(exc))
+    return TransientError(str(exc))
 
 
 def _raise_if_error(resp: httpx.Response) -> dict:
@@ -60,6 +93,7 @@ def _raise_if_error(resp: httpx.Response) -> dict:
             status=resp.status_code,
             code=str(data.get("serviceErrorCode") or data.get("code") or "http_error"),
             message=data.get("message") or resp.text[:300],
+            retry_after=_parse_retry_after(resp) if resp.status_code == 429 else None,
         )
     try:
         return resp.json()
