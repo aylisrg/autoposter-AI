@@ -76,17 +76,27 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
+# Attribute we stamp on handlers we install so we can distinguish ours from
+# handlers added by other tooling (e.g. pytest's LogCaptureHandler).
+_OUR_HANDLER_MARKER = "_autoposter_configured"
+
+
 def configure_logging(json_output: bool, level: int = logging.INFO) -> None:
     """Wire up the root logger. Called once from main.py at startup.
 
-    Idempotent: wipes existing handlers so re-running (e.g. uvicorn reload or
-    pytest re-import) doesn't double-emit every line.
+    Idempotent: removes any handler *we* previously installed before adding
+    a fresh one, so re-running (uvicorn reload, pytest re-import) doesn't
+    double-emit every line. Handlers attached by other tooling — notably
+    pytest's `LogCaptureHandler`, which drives `caplog` — are left alone
+    so test instrumentation survives app import.
     """
     root = logging.getLogger()
     root.setLevel(level)
     for handler in list(root.handlers):
-        root.removeHandler(handler)
+        if getattr(handler, _OUR_HANDLER_MARKER, False):
+            root.removeHandler(handler)
     handler = logging.StreamHandler()
+    setattr(handler, _OUR_HANDLER_MARKER, True)
     if json_output:
         handler.setFormatter(JsonFormatter())
     else:
