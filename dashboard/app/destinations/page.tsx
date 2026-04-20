@@ -26,6 +26,9 @@ import {
   type TargetReviewStatus,
 } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { InfoPopover } from "@/components/ui/info-popover";
 import {
   Check,
   Compass,
@@ -34,6 +37,7 @@ import {
   RefreshCw,
   Sparkles,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 
@@ -45,7 +49,7 @@ const STATUS_COLORS: Record<TargetReviewStatus, string> = {
   rejected: "bg-red-100 text-red-800 border-red-200",
 };
 
-export default function TargetsPage() {
+export default function DestinationsPage() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -181,17 +185,57 @@ export default function TargetsPage() {
 
   return (
     <div className="space-y-4 max-w-6xl">
+      <PageHeader
+        title="Destinations"
+        icon={Users}
+        description="Places your posts go out to — Facebook groups, pages, Instagram, Threads. Pick the ones that are a good fit, then the AI drafts for them."
+      />
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <CardTitle>Targets</CardTitle>
-              <CardDescription>
-                FB groups, pages, subreddits. Use <strong>Sync</strong> for your joined
-                groups, <strong>Discover</strong> to pull suggested groups,{" "}
-                <strong>Score</strong> to ask the AI which are a good fit, and{" "}
-                <strong>Cluster</strong> to organize approved ones into segments.
-              </CardDescription>
+            <div className="space-y-3">
+              <CardTitle>Four ways to add destinations</CardTitle>
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div className="flex items-start gap-2">
+                  <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="font-medium">Sync joined</div>
+                    <div className="text-xs text-muted-foreground">
+                      Import Facebook groups you already belong to via the Chrome extension.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Compass className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="font-medium">Discover suggested</div>
+                    <div className="text-xs text-muted-foreground">
+                      Pull Facebook's "Discover groups" feed so you can scan candidates.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="font-medium">Score with AI</div>
+                    <div className="text-xs text-muted-foreground">
+                      Claude reads the group description and rates fit 0-100 against your business.{" "}
+                      <InfoPopover label="Score cost">
+                        Costs about $0.001 per group. Scores &ge;70 are usually safe approvals.
+                      </InfoPopover>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Layers className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <div className="font-medium">Cluster approved</div>
+                    <div className="text-xs text-muted-foreground">
+                      Group approved destinations into named lists (e.g. "EU SaaS", "Freelancers"), so plans can target a list instead of picking one-by-one.
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={onSync} disabled={busy === "sync"}>
@@ -226,41 +270,54 @@ export default function TargetsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          <form
-            onSubmit={onCreate}
-            className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end"
-          >
-            <div className="space-y-1.5 md:col-span-2">
-              <Label>External URL or ID</Label>
-              <Input
-                required
-                placeholder="https://www.facebook.com/groups/123456789"
-                value={form.external_id}
-                onChange={(e) => setForm({ ...form, external_id: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Display name</Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tags (comma sep)</Label>
-              <div className="flex gap-2">
+          <div>
+            <h3 className="text-sm font-medium mb-2">Add one by hand</h3>
+            <form
+              onSubmit={onCreate}
+              className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end"
+            >
+              <div className="space-y-1.5 md:col-span-2">
+                <Label>Facebook group URL or ID</Label>
                 <Input
-                  value={form.tags}
-                  onChange={(e) => setForm({ ...form, tags: e.target.value })}
-                  placeholder="eu, saas"
+                  required
+                  placeholder="https://www.facebook.com/groups/123456789"
+                  value={form.external_id}
+                  onChange={(e) => setForm({ ...form, external_id: e.target.value })}
                 />
-                <Button type="submit">Add</Button>
               </div>
-            </div>
-          </form>
+              <div className="space-y-1.5">
+                <Label>Display name</Label>
+                <Input
+                  placeholder="Shown in the dashboard"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tags{" "}
+                  <InfoPopover label="Tags help">
+                    Free-form labels (comma-separated). Used to filter the destinations list — plans pick lists, not tags.
+                  </InfoPopover>
+                </Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={form.tags}
+                    onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                    placeholder="eu, saas"
+                  />
+                  <Button type="submit">Add</Button>
+                </div>
+              </div>
+            </form>
+          </div>
 
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Filter:</span>
+            <span className="text-muted-foreground">
+              Review status{" "}
+              <InfoPopover label="Review status">
+                Scored destinations start as <b>pending</b>. You review and mark them <b>approved</b> (posts can go here) or <b>rejected</b> (never post here). Plans only use approved ones.
+              </InfoPopover>
+            </span>
             {(["all", "pending", "approved", "rejected"] as const).map((s) => (
               <button
                 key={s}
@@ -347,8 +404,19 @@ export default function TargetsPage() {
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="p-4 text-muted-foreground">
-                      No targets match this filter.
+                    <td colSpan={9} className="p-6">
+                      {targets.length === 0 ? (
+                        <EmptyState
+                          icon={Users}
+                          title="No destinations yet"
+                          description="Start with Sync joined to import the Facebook groups you already belong to. Or add one by hand using the form above."
+                          cta={{ label: "Sync joined", onClick: onSync }}
+                        />
+                      ) : (
+                        <div className="text-muted-foreground text-sm">
+                          No destinations match this filter.
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ) : (

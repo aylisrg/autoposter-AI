@@ -12,6 +12,16 @@ const nextConfig = {
       },
     ];
   },
+  // UX overhaul renamed routes. Keep old paths working so bookmarks + deep
+  // links don't 404.
+  async redirects() {
+    return [
+      { source: "/review", destination: "/queue?status=pending_review", permanent: false },
+      { source: "/targets", destination: "/destinations", permanent: false },
+      { source: "/targets/:path*", destination: "/destinations/:path*", permanent: false },
+      { source: "/humanizer", destination: "/settings/posting-behavior", permanent: false },
+    ];
+  },
 };
 
 export default nextConfig;

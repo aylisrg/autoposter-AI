@@ -18,6 +18,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { EmptyState } from "@/components/ui/empty-state";
 import { CalendarDays, Loader2, Sparkles, Trash2 } from "lucide-react";
 
 function todayISO(offsetDays = 0): string {
@@ -56,7 +59,7 @@ export default function PlansListPage() {
   const handleGenerate = async (useAI: boolean) => {
     setError(null);
     if (!name.trim()) {
-      setError("Give the plan a name.");
+      setError("Give the calendar a name first.");
       return;
     }
     setCreating(true);
@@ -85,44 +88,47 @@ export default function PlansListPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm("Delete plan? All slots will be removed.")) return;
+    if (!confirm("Delete this calendar? All its slots are removed.")) return;
     await deletePlan(id);
     refresh();
   };
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <CalendarDays className="h-6 w-6" />
-          Content Plans
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Let the Planner agent propose a calendar, then edit it in the calendar
-          view.
-        </p>
-      </div>
+      <PageHeader
+        title="Calendar"
+        description="A calendar of upcoming posts. Describe a goal and the Planner AI fills in dates, post angles, and hints. You can edit every slot by hand afterwards."
+        icon={CalendarDays}
+      />
 
       <Card>
         <CardHeader>
-          <CardTitle>New plan</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            Make a new calendar
+            <InfoPopover label="How does this work?">
+              You pick a date range and describe what you want to achieve.
+              The Planner agent fills the calendar with post angles spread
+              across the days — you review and edit before any of them
+              actually get drafted into posts.
+            </InfoPopover>
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
-              placeholder="e.g. July growth"
+              placeholder='e.g. "July growth push"'
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
           <div>
-            <Label htmlFor="goal">Goal (optional)</Label>
+            <Label htmlFor="goal">Goal (optional but helps a lot)</Label>
             <Textarea
               id="goal"
               rows={2}
-              placeholder="Drive sign-ups for the new product launch."
+              placeholder="Drive sign-ups for the new pricing tier launching July 10."
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
             />
@@ -152,48 +158,49 @@ export default function PlansListPage() {
               {error}
             </div>
           )}
-          <div className="flex gap-2">
-            <Button
-              onClick={() => handleGenerate(true)}
-              disabled={creating}
-            >
+          <div className="flex gap-2 items-center flex-wrap">
+            <Button onClick={() => handleGenerate(true)} disabled={creating}>
               {creating ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}
-              Generate with AI
+              Let the AI plan it
+              <span className="ml-1.5 text-xs opacity-80">~$0.05</span>
             </Button>
             <Button
               variant="outline"
               onClick={() => handleGenerate(false)}
               disabled={creating}
             >
-              Create empty
+              Start with an empty calendar
             </Button>
           </div>
         </CardContent>
       </Card>
 
       <div>
-        <h2 className="text-lg font-semibold mb-3">Existing plans</h2>
+        <h2 className="text-lg font-semibold mb-3">Your calendars</h2>
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : plans.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No plans yet. Create one above.
-          </p>
+          <EmptyState
+            icon={CalendarDays}
+            title="No calendars yet"
+            description="Make your first one above — it's the fastest way to fill a month with posts."
+          />
         ) : (
           <div className="space-y-2">
             {plans.map((p) => (
               <Card key={p.id} className="hover:bg-accent/40 transition-colors">
                 <div className="flex items-center p-4">
                   <Link href={`/plans/${p.id}`} className="flex-1">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                       <span className="font-medium">{p.name}</span>
                       <Badge variant="outline">{p.status}</Badge>
                       <Badge variant="secondary">
-                        {p.slots.length} slot{p.slots.length === 1 ? "" : "s"}
+                        {p.slots.length} post
+                        {p.slots.length === 1 ? "" : "s"} planned
                       </Badge>
                     </div>
                     <div className="text-xs text-muted-foreground mt-1">

@@ -14,6 +14,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { EmptyState } from "@/components/ui/empty-state";
+import { POST_TYPE_OPTIONS, POST_TYPE_DESCRIPTIONS } from "@/lib/post-types";
 import {
   createPost,
   generatePost,
@@ -25,18 +29,7 @@ import {
   type PostType,
   type Target,
 } from "@/lib/api";
-
-const POST_TYPES: PostType[] = [
-  "informative",
-  "soft_sell",
-  "hard_sell",
-  "engagement",
-  "story",
-  "motivational",
-  "testimonial",
-  "hot_take",
-  "seasonal",
-];
+import { PenSquare, Sparkles, Users } from "lucide-react";
 
 export default function ComposePage() {
   const [targets, setTargets] = useState<Target[]>([]);
@@ -72,7 +65,9 @@ export default function ComposePage() {
     try {
       const res = await uploadMedia(file);
       setImageUrl(res.url);
-      setMessage(`Uploaded ${res.filename} (${(res.size_bytes / 1024).toFixed(0)} KB).`);
+      setMessage(
+        `Uploaded ${res.filename} (${(res.size_bytes / 1024).toFixed(0)} KB).`,
+      );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -81,7 +76,9 @@ export default function ComposePage() {
   };
 
   const onGenerate = async (withImage: boolean) => {
-    setBusy(withImage ? "Generating text + image…" : "Generating text…");
+    setBusy(
+      withImage ? "Writing text + generating image…" : "Writing text…",
+    );
     setMessage(null);
     try {
       const d = await generatePost({
@@ -117,11 +114,11 @@ export default function ComposePage() {
 
   const onPublishNow = async () => {
     if (!text.trim()) {
-      setMessage("Text is empty.");
+      setMessage("Write something first.");
       return;
     }
     if (selectedTargetIds.size === 0) {
-      setMessage("Select at least one target.");
+      setMessage("Pick at least one destination.");
       return;
     }
     setBusy("Publishing…");
@@ -135,7 +132,7 @@ export default function ComposePage() {
       const ok = result.variants.filter((v) => v.status === "posted").length;
       const failed = result.variants.filter((v) => v.status === "failed");
       setMessage(
-        `Publish result: ${ok}/${result.variants.length} posted.` +
+        `Posted to ${ok}/${result.variants.length}.` +
           (failed.length
             ? ` Failures: ${failed.map((f) => f.error).join("; ")}`
             : ""),
@@ -149,11 +146,11 @@ export default function ComposePage() {
 
   const onSchedule = async () => {
     if (!scheduledFor) {
-      setMessage("Pick a date/time.");
+      setMessage("Pick a date and time.");
       return;
     }
     if (selectedTargetIds.size === 0) {
-      setMessage("Select at least one target.");
+      setMessage("Pick at least one destination.");
       return;
     }
     setBusy("Scheduling…");
@@ -165,7 +162,9 @@ export default function ComposePage() {
         scheduled_for: new Date(scheduledFor).toISOString(),
         generate_spintax: selectedTargetIds.size > 1,
       });
-      setMessage(`Scheduled for ${new Date(scheduledFor).toLocaleString()}.`);
+      setMessage(
+        `Scheduled for ${new Date(scheduledFor).toLocaleString()}.`,
+      );
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));
     } finally {
@@ -182,27 +181,44 @@ export default function ComposePage() {
     setMessage(null);
   };
 
+  const multi = selectedTargetIds.size > 1;
+
   return (
-    <div className="space-y-4 max-w-4xl">
+    <div className="space-y-4 p-6 max-w-4xl">
+      <PageHeader
+        title="New post"
+        description="Write it, pick where it goes, then publish now or schedule it. Claude can draft the text for you; Gemini can draw the picture."
+        icon={PenSquare}
+      />
+
       <Card>
         <CardHeader>
-          <CardTitle>Compose a post</CardTitle>
+          <CardTitle>1. Write the post</CardTitle>
           <CardDescription>
-            Generate a draft with Claude, edit it, attach an image, pick
-            targets, then publish now or schedule.
+            Pick an angle, give a hint, then let Claude draft it — or type it
+            yourself.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <Label>Post type</Label>
+              <div className="flex items-center gap-1">
+                <Label>Angle</Label>
+                <InfoPopover label="What's an angle?">
+                  The kind of post you want: teaching something, telling a
+                  story, pushing an offer. The AI tailors the tone to match.
+                  <span className="mt-2 block text-muted-foreground">
+                    Current: {POST_TYPE_DESCRIPTIONS[postType] ?? ""}
+                  </span>
+                </InfoPopover>
+              </div>
               <Select
                 value={postType}
                 onChange={(e) => setPostType(e.target.value as PostType)}
               >
-                {POST_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {POST_TYPE_OPTIONS.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
                   </option>
                 ))}
               </Select>
@@ -224,7 +240,11 @@ export default function ComposePage() {
               disabled={!!busy}
               onClick={() => onGenerate(false)}
             >
-              Generate text (Claude)
+              <Sparkles className="mr-2 h-4 w-4" />
+              Write with AI{" "}
+              <span className="ml-1.5 text-xs text-muted-foreground">
+                ~$0.01
+              </span>
             </Button>
             <Button
               type="button"
@@ -232,7 +252,11 @@ export default function ComposePage() {
               disabled={!!busy}
               onClick={() => onGenerate(true)}
             >
-              Generate text + image (Gemini)
+              <Sparkles className="mr-2 h-4 w-4" />
+              Write + draw image
+              <span className="ml-1.5 text-xs text-muted-foreground">
+                ~$0.05
+              </span>
             </Button>
             <Button
               type="button"
@@ -240,7 +264,7 @@ export default function ComposePage() {
               disabled={!!busy}
               onClick={resetDraft}
             >
-              New draft
+              Clear
             </Button>
           </div>
 
@@ -251,26 +275,37 @@ export default function ComposePage() {
               value={text}
               onChange={(e) => {
                 setText(e.target.value);
-                if (draft) setDraft(null); // text edited → force re-create on publish
+                if (draft) setDraft(null);
               }}
+              placeholder="Write your post here, or use 'Write with AI' above."
             />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label>First comment (optional)</Label>
+              <div className="flex items-center gap-1">
+                <Label>First comment (optional)</Label>
+                <InfoPopover label="What's a first comment?">
+                  Some networks (Facebook, Instagram) tuck links into the
+                  first comment so they don't hurt the post's reach. Paste
+                  your link here and autoposter will add it right after
+                  publishing.
+                </InfoPopover>
+              </div>
               <Textarea
                 rows={2}
                 value={firstComment}
                 onChange={(e) => setFirstComment(e.target.value)}
+                placeholder="Optional — often a link the reader can follow."
               />
             </div>
             <div className="space-y-1.5">
-              <Label>CTA URL (optional)</Label>
+              <Label>Call-to-action URL (optional)</Label>
               <Input
                 type="url"
                 value={ctaUrl}
                 onChange={(e) => setCtaUrl(e.target.value)}
+                placeholder="https://example.com/pricing"
               />
             </div>
           </div>
@@ -312,17 +347,29 @@ export default function ComposePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Targets</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            2. Pick destinations
+            {multi && (
+              <InfoPopover label="Why rewrites?">
+                When you pick two or more destinations, autoposter rewrites
+                the post slightly for each (same meaning, different words) so
+                the networks don't flag duplicate text.
+              </InfoPopover>
+            )}
+          </CardTitle>
           <CardDescription>
-            Select one or more. Multi-target posts get auto-spintaxed to
-            avoid identical text across groups.
+            Pick one or more places to publish. Multi-destination posts get
+            auto-rewritten so platforms don't flag identical copies.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {targets.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              No active targets. Add some on the Targets page.
-            </div>
+            <EmptyState
+              icon={Users}
+              title="No active destinations"
+              description="Add a Facebook group, Instagram account, or other destination first."
+              cta={{ label: "Add destinations", href: "/destinations" }}
+            />
           ) : (
             <div className="flex flex-wrap gap-2">
               {targets.map((t) => {
@@ -353,7 +400,10 @@ export default function ComposePage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Publish</CardTitle>
+          <CardTitle>3. Publish or schedule</CardTitle>
+          <CardDescription>
+            Post now, or pick a time and autoposter will do it for you.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">

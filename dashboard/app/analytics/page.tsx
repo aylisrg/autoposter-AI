@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { EmptyState } from "@/components/ui/empty-state";
+import { labelForPostType } from "@/lib/post-types";
 import {
   applyProposal,
   collectMetricsNow,
@@ -35,6 +39,15 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react";
+
+const PROPOSAL_FIELD_LABEL: Record<string, string> = {
+  posting_window_start_hour: "Earliest posting hour",
+  posting_window_end_hour: "Latest posting hour",
+  posts_per_day: "Posts per day",
+  tone: "Tone",
+  length: "Length",
+  emoji_density: "Emoji density",
+};
 
 export default function AnalyticsPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
@@ -76,7 +89,7 @@ export default function AnalyticsPage() {
     try {
       const r = await collectMetricsNow();
       setMsg(
-        `Collected: touched ${r.variants_touched} variants, ${r.rows_created} new rows.`,
+        `Refreshed ${r.variants_touched} posts · ${r.rows_created} new data points.`,
       );
       await refresh();
     } catch (e) {
@@ -91,7 +104,9 @@ export default function AnalyticsPage() {
     setMsg(null);
     try {
       const r = await generateAnalystReport({ days: 7 });
-      setMsg(`New report #${r.id} — cost $${r.cost_usd.toFixed(4)}.`);
+      setMsg(
+        `New report #${r.id} ready — AI cost $${r.cost_usd.toFixed(4)}.`,
+      );
       await refresh();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -105,7 +120,7 @@ export default function AnalyticsPage() {
     setMsg(null);
     try {
       const r = await refreshFewShotStore();
-      setMsg(`Few-shot store: ${r.inserted} examples.`);
+      setMsg(`Winning examples refreshed — ${r.inserted} saved.`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally {
@@ -123,34 +138,61 @@ export default function AnalyticsPage() {
     await refresh();
   };
 
-  if (loading) return <div>Loading…</div>;
+  if (loading) return <div className="p-6">Loading…</div>;
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6 p-6 max-w-6xl">
+      <PageHeader
+        title="Results"
+        description="How your posts are performing, and what the AI suggests changing. Metrics cover the last 7 days."
+        icon={BarChart3}
+      />
+
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
               <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Analytics — Last 7 days
+                Headline numbers
+                <InfoPopover label="What's score?">
+                  An engagement score combines likes, comments, and shares
+                  into one number (comments count more than likes). Higher
+                  is better.
+                </InfoPopover>
               </CardTitle>
               <CardDescription>
-                KPIs + AI-driven insights. Analyst runs weekly (Sunday 21:00
-                UTC). You can trigger it manually here.
+                Totals for the last 7 days across every destination.
               </CardDescription>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" variant="outline" onClick={collect} disabled={!!working}>
+            <div className="flex gap-2 flex-wrap">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={collect}
+                disabled={!!working}
+                title="Fetch the latest likes/comments/shares from each network"
+              >
                 <RefreshCw className="h-4 w-4 mr-1" />
-                Collect metrics
+                Pull fresh numbers
               </Button>
-              <Button size="sm" variant="outline" onClick={refreshFewShot} disabled={!!working}>
-                Refresh few-shot
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={refreshFewShot}
+                disabled={!!working}
+                title="Pick the top-scoring recent posts and use them as examples next time the AI drafts a post"
+              >
+                Update AI examples
               </Button>
-              <Button size="sm" onClick={runReport} disabled={!!working}>
+              <Button
+                size="sm"
+                onClick={runReport}
+                disabled={!!working}
+                title="Claude reads your recent posts and writes a summary (~$0.10)"
+              >
                 <Sparkles className="h-4 w-4 mr-1" />
-                Run Analyst
+                Get AI summary
+                <span className="ml-1.5 text-xs opacity-80">~$0.10</span>
               </Button>
             </div>
           </div>
@@ -176,38 +218,52 @@ export default function AnalyticsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" /> Top performers
+              <TrendingUp className="h-5 w-5" /> What worked
             </CardTitle>
-            <CardDescription>Highest engagement_score in window.</CardDescription>
+            <CardDescription>
+              Your highest-scoring posts from the last 7 days.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <PerformersList items={top} empty="No posts with metrics yet." />
+            <PerformersList items={top} empty="Nothing to rank yet — post a few things first." />
           </CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingDown className="h-5 w-5" /> Bottom performers
+              <TrendingDown className="h-5 w-5" /> What flopped
             </CardTitle>
-            <CardDescription>Post types / angles to reconsider.</CardDescription>
+            <CardDescription>
+              Angles or phrasings worth rethinking.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <PerformersList items={bottom} empty="Nothing collected yet." />
+            <PerformersList items={bottom} empty="No data yet." />
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Optimizer proposals</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            AI suggestions
+            <InfoPopover label="What are suggestions?">
+              After reading your results, the Analyst AI proposes tweaks to
+              your profile — post times, tone, posts per day.
+              High-confidence low-risk ones (≥ 75% confidence on a numeric
+              knob) apply on their own; the rest wait for you to approve or
+              reject.
+            </InfoPopover>
+          </CardTitle>
           <CardDescription>
-            Small safe changes (posting window, ratios) may auto-apply when
-            confidence ≥ 0.75. Others wait for you.
+            Small tweaks the AI thinks will improve your numbers.
           </CardDescription>
         </CardHeader>
         <CardContent>
           {proposals.length === 0 ? (
-            <div className="text-sm text-muted-foreground">No proposals.</div>
+            <div className="text-sm text-muted-foreground">
+              No suggestions right now. Post a few things and come back.
+            </div>
           ) : (
             <div className="space-y-2">
               {proposals.map((p) => (
@@ -226,13 +282,27 @@ export default function AnalyticsPage() {
                               : "warning"
                         }
                       >
-                        {p.status}
+                        {p.status === "applied"
+                          ? "applied"
+                          : p.status === "rejected"
+                            ? "rejected"
+                            : "waiting for you"}
                       </Badge>
                       {p.auto_applied && (
-                        <Badge variant="secondary">auto</Badge>
+                        <Badge
+                          variant="secondary"
+                          title="High confidence — autoposter applied this automatically."
+                        >
+                          auto
+                        </Badge>
                       )}
-                      <span className="font-medium">{p.field}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="font-medium">
+                        {PROPOSAL_FIELD_LABEL[p.field] ?? p.field}
+                      </span>
+                      <span
+                        className="text-xs text-muted-foreground"
+                        title="How sure the AI is that this change will help."
+                      >
                         confidence {(p.confidence * 100).toFixed(0)}%
                       </span>
                     </div>
@@ -266,7 +336,7 @@ export default function AnalyticsPage() {
                         disabled={!!working}
                       >
                         <XCircle className="h-4 w-4 mr-1" />
-                        Reject
+                        Dismiss
                       </Button>
                     </div>
                   )}
@@ -279,13 +349,18 @@ export default function AnalyticsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent Analyst reports</CardTitle>
+          <CardTitle>Past AI summaries</CardTitle>
+          <CardDescription>
+            Weekly write-ups from the Analyst. Runs on its own every Sunday
+            at 21:00 UTC, or whenever you tap <em>Get AI summary</em>.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {reports.length === 0 ? (
-            <div className="text-sm text-muted-foreground">
-              No reports yet. Click "Run Analyst" to generate one.
-            </div>
+            <EmptyState
+              title="No summaries yet"
+              description={"Tap Get AI summary above to create your first one."}
+            />
           ) : (
             <div className="space-y-3">
               {reports.map((r) => (
@@ -295,14 +370,16 @@ export default function AnalyticsPage() {
                     <span>
                       {formatDate(r.period_start)} → {formatDate(r.period_end)}
                     </span>
-                    <span>${r.cost_usd.toFixed(4)}</span>
+                    <span title="Claude API cost to produce this report">
+                      ${r.cost_usd.toFixed(4)}
+                    </span>
                     <span>{r.model}</span>
                   </div>
                   <div className="text-sm whitespace-pre-wrap">{r.summary}</div>
                   {r.body.patterns && r.body.patterns.length > 0 && (
                     <details className="text-xs">
                       <summary className="cursor-pointer">
-                        {r.body.patterns.length} patterns
+                        {r.body.patterns.length} patterns the AI noticed
                       </summary>
                       <ul className="list-disc pl-5 pt-1 space-y-0.5">
                         {r.body.patterns.map((line, i) => (
@@ -344,7 +421,7 @@ function PerformersList({
       {items.map((p) => (
         <div key={p.post_id} className="rounded border p-2 bg-card">
           <div className="flex items-center gap-2 text-xs">
-            <Badge variant="outline">{p.post_type}</Badge>
+            <Badge variant="outline">{labelForPostType(p.post_type)}</Badge>
             <span className="font-medium">
               score {p.engagement_score.toFixed(1)}
             </span>

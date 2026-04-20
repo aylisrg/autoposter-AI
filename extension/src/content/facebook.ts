@@ -51,18 +51,25 @@ type ListGroupsMsg = { type: "list_groups" };
 type ListSuggestedMsg = { type: "list_suggested_groups" };
 type FetchMetricsMsg = { type: "fetch_metrics" };
 type SmokeMsg = { type: "smoke" };
+type CsPingMsg = { type: "cs_ping" };
 
 type Msg =
   | PublishMsg
   | ListGroupsMsg
   | ListSuggestedMsg
   | FetchMetricsMsg
-  | SmokeMsg;
+  | SmokeMsg
+  | CsPingMsg;
 
 chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
   (async () => {
     try {
       switch (msg.type) {
+        case "cs_ping": {
+          // Readiness probe from background.ts — answer synchronously-ish.
+          sendResponse({ ok: true });
+          break;
+        }
         case "publish": {
           const result = await publishPost(msg);
           sendResponse({ ok: true, ...result });

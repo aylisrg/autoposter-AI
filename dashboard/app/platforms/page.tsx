@@ -12,10 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { InfoPopover } from "@/components/ui/info-popover";
 import {
   addManualCredential,
   deletePlatformCredential,
   getMetaOAuthUrl,
+  getStatus,
   listPlatformCredentials,
   refreshPlatformCredential,
   runExtensionSmoke,
@@ -27,6 +30,7 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  Chrome,
   Link2,
   Plus,
   RefreshCw,
@@ -34,9 +38,6 @@ import {
   XCircle,
 } from "lucide-react";
 
-// Meta tokens live ~60 days. We surface the state in three buckets so the
-// user knows whether to worry: >14 days = safe (green), 1-14 = refresh soon
-// (amber), <=0 = already expired, publishes will 401 (red).
 type ExpiryBucket = "safe" | "soon" | "expired" | "unknown";
 
 function expiryBucket(days: number | null): ExpiryBucket {
@@ -74,6 +75,9 @@ export default function PlatformsPage() {
   const [error, setError] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
   const [refreshingId, setRefreshingId] = useState<number | null>(null);
+  const [extensionConnected, setExtensionConnected] = useState<boolean | null>(
+    null,
+  );
   const [smokeReport, setSmokeReport] = useState<ExtensionSmokeReport | null>(
     null,
   );
@@ -94,8 +98,12 @@ export default function PlatformsPage() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const rows = await listPlatformCredentials();
+      const [rows, status] = await Promise.all([
+        listPlatformCredentials(),
+        getStatus().catch(() => null),
+      ]);
       setCreds(rows);
+      setExtensionConnected(status?.extension_connected ?? null);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load credentials");
@@ -106,6 +114,12 @@ export default function PlatformsPage() {
 
   useEffect(() => {
     refresh();
+    const id = setInterval(() => {
+      getStatus()
+        .then((s) => setExtensionConnected(s.extension_connected))
+        .catch(() => {});
+    }, 10_000);
+    return () => clearInterval(id);
   }, []);
 
   const startOAuth = async () => {
@@ -172,13 +186,11 @@ export default function PlatformsPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Platforms</h1>
-        <p className="text-muted-foreground">
-          Connect Instagram and Threads via Meta OAuth. Facebook Groups live in
-          the extension settings.
-        </p>
-      </div>
+      <PageHeader
+        title="Connections"
+        description="How autoposter talks to each network. Instagram and Threads go through Meta's official API. Facebook Groups need the Chrome extension — Facebook has no API for groups."
+        icon={Link2}
+      />
 
       {error && (
         <Card className="border-destructive">
@@ -190,19 +202,90 @@ export default function PlatformsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Connect Meta</CardTitle>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Chrome className="h-5 w-5" />
+                Chrome extension
+              </CardTitle>
+              <CardDescription>
+                Required for Facebook Groups. It signs in as you in a real
+                browser tab and posts through the normal UI — Facebook has no
+                official API for group posts.
+              </CardDescription>
+            </div>
+            {extensionConnected === true ? (
+              <Badge variant="success">connected</Badge>
+            ) : extensionConnected === false ? (
+              <Badge variant="warning">not detected</Badge>
+            ) : (
+              <Badge variant="outline">checking…</Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {extensionConnected === false && (
+            <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+              <li>
+                Build it once:{" "}
+                <code className="rounded bg-muted px-1">
+                  cd extension &amp;&amp; npm install &amp;&amp; npm run build
+                </code>
+              </li>
+              <li>
+                Open{" "}
+                <code className="rounded bg-muted px-1">
+                  chrome://extensions
+                </code>{" "}
+                → enable <span className="font-medium">Developer mode</span> →{" "}
+                <span className="font-medium">Load unpacked</span> → pick{" "}
+                <code className="rounded bg-muted px-1">extension/dist</code>.
+              </li>
+              <li>
+                Log in to Facebook in the same Chrome profile. The extension
+                opens a persistent WebSocket back to this server.
+              </li>
+            </ol>
+          )}
+          {extensionConnected === true && (
+            <p className="text-muted-foreground">
+              The extension is online and ready to post. If a publish fails
+              silently, run the smoke test below — Facebook tweaks its DOM
+              every few weeks.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <Button onClick={runSmoke} disabled={smokeRunning} variant="outline">
+              <Activity
+                className={`mr-2 h-4 w-4 ${smokeRunning ? "animate-pulse" : ""}`}
+              />
+              {smokeRunning ? "Probing…" : "Run health check"}
+            </Button>
+          </div>
+          {smokeError && (
+            <p className="text-sm text-destructive">{smokeError}</p>
+          )}
+          {smokeReport && <SmokeReportView report={smokeReport} />}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Meta (Instagram &amp; Threads)</CardTitle>
           <CardDescription>
-            Logs into Facebook, lists your Pages, and stores a long-lived token
-            for the first Instagram Business account it finds.
+            One-click sign-in with Facebook. We read which Pages you manage,
+            find the Instagram Business account linked to each, and save a
+            long-lived token so autoposter can publish for ~60 days before
+            you're asked to sign in again.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex gap-2">
+        <CardContent className="flex flex-wrap gap-2">
           <Button onClick={startOAuth}>
-            <Link2 className="mr-2 h-4 w-4" /> Connect via OAuth
+            <Link2 className="mr-2 h-4 w-4" /> Sign in with Facebook
           </Button>
           <Button variant="outline" onClick={() => setManualOpen((v) => !v)}>
             <Plus className="mr-2 h-4 w-4" />
-            {manualOpen ? "Cancel manual" : "Paste token manually"}
+            {manualOpen ? "Cancel" : "I already have a token"}
           </Button>
         </CardContent>
       </Card>
@@ -210,15 +293,23 @@ export default function PlatformsPage() {
       {manualOpen && (
         <Card>
           <CardHeader>
-            <CardTitle>Manual credential</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              Paste a token by hand
+              <InfoPopover label="What's a long-lived token?">
+                A long-lived Meta token is the ~60-day access key that
+                autoposter uses to publish. You normally get one via the
+                Sign-in button; paste it here only if you generated one in
+                Graph API Explorer or Postman yourself.
+              </InfoPopover>
+            </CardTitle>
             <CardDescription>
-              For CLI users who already obtained a long-lived token elsewhere
-              (Graph API Explorer, Postman, etc).
+              Skip this unless you already generated a long-lived token
+              elsewhere.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2">
             <div>
-              <Label>Platform</Label>
+              <Label>Network</Label>
               <select
                 className="w-full rounded-md border bg-background p-2 text-sm"
                 value={form.platform_id}
@@ -234,7 +325,14 @@ export default function PlatformsPage() {
               </select>
             </div>
             <div>
-              <Label>Account ID (numeric)</Label>
+              <div className="flex items-center gap-1">
+                <Label>Account ID</Label>
+                <InfoPopover label="What's an Account ID?">
+                  The numeric ID of the Instagram Business account or Threads
+                  profile (e.g. <code>17841400000000000</code>). Find it in
+                  Graph API Explorer under <em>/me/accounts</em>.
+                </InfoPopover>
+              </div>
               <Input
                 value={form.account_id}
                 onChange={(e) =>
@@ -250,6 +348,7 @@ export default function PlatformsPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, username: e.target.value }))
                 }
+                placeholder="@yourhandle"
               />
             </div>
             <div className="md:col-span-2">
@@ -276,38 +375,18 @@ export default function PlatformsPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Facebook extension health</CardTitle>
+          <CardTitle>Signed-in accounts</CardTitle>
           <CardDescription>
-            Probes whether the content script can still find FB's composer,
-            post button, and comment editor. Run this on a{" "}
-            <code>facebook.com/groups/...</code> tab when publishes start
-            silently failing — FB changes its DOM periodically.
+            Meta tokens last ~60 days. Autoposter refreshes them in the
+            background; the badge tells you when the next renewal is due.
           </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Button onClick={runSmoke} disabled={smokeRunning} variant="outline">
-            <Activity
-              className={`mr-2 h-4 w-4 ${smokeRunning ? "animate-pulse" : ""}`}
-            />
-            {smokeRunning ? "Probing…" : "Run smoke test"}
-          </Button>
-          {smokeError && (
-            <p className="text-sm text-destructive">{smokeError}</p>
-          )}
-          {smokeReport && <SmokeReportView report={smokeReport} />}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Connected accounts</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : creds.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No connected accounts yet.
+              Nothing connected yet. Use the Meta sign-in above.
             </p>
           ) : (
             <div className="space-y-2">
@@ -344,7 +423,7 @@ export default function PlatformsPage() {
                           size="sm"
                           onClick={() => refreshToken(c.id)}
                           disabled={refreshingId === c.id}
-                          title="Refresh Meta token now"
+                          title="Renew token now"
                         >
                           <RefreshCw
                             className={`h-4 w-4 ${
@@ -357,6 +436,7 @@ export default function PlatformsPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => remove(c.id)}
+                        title="Disconnect"
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -373,41 +453,43 @@ export default function PlatformsPage() {
 }
 
 function SmokeReportView({ report }: { report: ExtensionSmokeReport }) {
-  const checks: Array<{ label: string; value: boolean; critical?: boolean }> = [
-    { label: "On a group page", value: report.is_group_page, critical: true },
-    { label: "Logged in", value: report.is_logged_in, critical: true },
-    {
-      label: "No checkpoint / captcha",
-      value: !report.checkpoint_detected,
-      critical: true,
-    },
-  ];
+  // Plain-English labels for each DOM probe — avoid "composer trigger".
+  const checks: Array<{ label: string; value: boolean; critical?: boolean }> =
+    [
+      { label: "You're on a group page", value: report.is_group_page, critical: true },
+      { label: "You're signed in to Facebook", value: report.is_logged_in, critical: true },
+      {
+        label: "No security check / captcha in the way",
+        value: !report.checkpoint_detected,
+        critical: true,
+      },
+    ];
   if (report.is_group_page && report.is_group_member !== null) {
     checks.push({
-      label: "Member of this group",
+      label: "You're a member of this group",
       value: report.is_group_member,
       critical: true,
     });
   }
   checks.push(
-    { label: "Composer trigger found", value: report.composer_trigger, critical: true },
-    { label: "Composer editor when open", value: report.composer_editor_when_open },
-    { label: "Post button when open", value: report.post_button_when_open },
+    { label: "Found the \"Write something…\" box", value: report.composer_trigger, critical: true },
+    { label: "Text editor opens when clicked", value: report.composer_editor_when_open },
+    { label: "Post button appears", value: report.post_button_when_open },
     {
-      label: "Photo/Video button when open",
+      label: "Photo / video button appears",
       value: report.photo_video_button_when_open,
     },
-    { label: "Comment button on article", value: report.comment_button_on_article },
-    { label: "Comment editor on article", value: report.comment_editor_on_article },
+    { label: "Comment button on a post", value: report.comment_button_on_article },
+    { label: "Comment editor on a post", value: report.comment_editor_on_article },
   );
   return (
     <div className="space-y-2 rounded-lg border p-3 text-sm">
       <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
         <span>locale: {report.locale}</span>
         <span>·</span>
-        <span>articles: {report.articles_detected}</span>
+        <span>posts visible: {report.articles_detected}</span>
         <span>·</span>
-        <span>groups: {report.groups_detected}</span>
+        <span>groups in sidebar: {report.groups_detected}</span>
       </div>
       <ul className="space-y-1">
         {checks.map((c) => (

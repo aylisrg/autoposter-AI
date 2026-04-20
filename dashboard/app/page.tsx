@@ -88,7 +88,8 @@ export default function HomePage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Home</h1>
         <p className="text-muted-foreground">
-          Live overview — what's happening and what the system needs from you.
+          What autoposter is doing right now, and the one thing we need from
+          you next. Updates every 15 seconds.
         </p>
       </div>
 
@@ -160,38 +161,46 @@ function SetupCard({ setup }: { setup: SetupBlock }) {
     {
       label: "Chrome extension",
       ok: setup.extension_connected,
-      note: setup.extension_connected ? "connected" : "not connected",
+      note: setup.extension_connected ? "connected" : "install it",
       href: "/platforms",
       icon: Link2,
     },
     {
-      label: "Business profile",
+      label: "Your business",
       ok: setup.has_business_profile,
-      note: setup.has_business_profile ? "ready" : "not set up",
+      note: setup.has_business_profile ? "ready" : "tell the AI who you are",
       href: "/profile",
       icon: Briefcase,
     },
     {
-      label: "Platforms connected",
+      label: "Accounts linked",
       ok: setup.platforms_connected > 0,
       note:
         setup.platforms_expiring_soon > 0
-          ? `${setup.platforms_connected} connected · ${setup.platforms_expiring_soon} expiring soon`
-          : `${setup.platforms_connected} connected`,
+          ? `${setup.platforms_connected} linked · ${setup.platforms_expiring_soon} expiring soon`
+          : setup.platforms_connected === 0
+          ? "link at least one"
+          : `${setup.platforms_connected} linked`,
       href: "/platforms",
       icon: Link2,
     },
     {
-      label: "Active targets",
+      label: "Destinations",
       ok: setup.targets_active > 0,
-      note: `${setup.targets_active} active`,
-      href: "/targets",
+      note:
+        setup.targets_active === 0
+          ? "add a group or account"
+          : `${setup.targets_active} active`,
+      href: "/destinations",
       icon: Users,
     },
     {
-      label: "Content plans",
+      label: "Calendar",
       ok: setup.plans_active > 0,
-      note: `${setup.plans_active} active`,
+      note:
+        setup.plans_active === 0
+          ? "none running"
+          : `${setup.plans_active} active`,
       href: "/plans",
       icon: ListChecks,
     },
@@ -201,7 +210,8 @@ function SetupCard({ setup }: { setup: SetupBlock }) {
       <CardHeader>
         <CardTitle>Setup</CardTitle>
         <CardDescription>
-          The pieces needed for the pipeline to work end-to-end.
+          Everything autoposter needs to work end-to-end. Green checks mean
+          you're good; click any row to jump there.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -243,7 +253,9 @@ function ActivityCard({ activity }: { activity: ActivityBlock }) {
     <Card>
       <CardHeader>
         <CardTitle>Activity</CardTitle>
-        <CardDescription>What's happening right now.</CardDescription>
+        <CardDescription>
+          What's queued, what's going out right now, what needs your eye.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
         {hasPublishing && activity.publishing_now && (
@@ -279,13 +291,13 @@ function ActivityCard({ activity }: { activity: ActivityBlock }) {
         )}
         <div className="grid grid-cols-2 gap-2 pt-2 text-xs">
           <StatLink
-            href="/review"
+            href="/queue?status=pending_review"
             icon={FileEdit}
             count={activity.pending_review}
-            label="awaiting review"
+            label="need approval"
           />
           <StatLink
-            href="/queue"
+            href="/queue?status=scheduled"
             icon={ListChecks}
             count={activity.scheduled_total}
             label="scheduled"
@@ -347,8 +359,12 @@ function FailuresCard({ failures }: { failures: RecentFailure[] }) {
           <Badge variant="destructive" className="mr-1">
             needs you
           </Badge>{" "}
-          means retrying won't help until you fix something (join a group,
-          pass a checkpoint, re-connect a platform).
+          means the system will keep failing until you do something (join a
+          group, solve a Facebook security check, reconnect an account).{" "}
+          <Badge variant="warning" className="mr-1">
+            will retry
+          </Badge>{" "}
+          means it'll try again on its own.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -363,7 +379,7 @@ function FailuresCard({ failures }: { failures: RecentFailure[] }) {
                   {f.kind === "permanent" ? (
                     <Badge variant="destructive">needs you</Badge>
                   ) : (
-                    <Badge variant="warning">transient</Badge>
+                    <Badge variant="warning">will retry</Badge>
                   )}
                   <span className="font-medium">
                     {f.platform_id} · {f.target_name}
