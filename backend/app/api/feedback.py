@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.db.models import Feedback, Post
-from app.schemas import FeedbackIn, FeedbackOut
+from app.schemas import FeedbackIn, FeedbackOut, FeedbackPatch
 
 router = APIRouter(prefix="/api/feedback", tags=["feedback"])
 
@@ -34,3 +34,36 @@ def list_feedback(post_id: int, db: Session = Depends(get_session)) -> list[Feed
         .order_by(Feedback.created_at.desc())
         .all()
     )
+
+
+@router.get("/{feedback_id}", response_model=FeedbackOut)
+def get_feedback(feedback_id: int, db: Session = Depends(get_session)) -> Feedback:
+    row = db.get(Feedback, feedback_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    return row
+
+
+@router.patch("/{feedback_id}", response_model=FeedbackOut)
+def patch_feedback(
+    feedback_id: int,
+    payload: FeedbackPatch,
+    db: Session = Depends(get_session),
+) -> Feedback:
+    row = db.get(Feedback, feedback_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, key, value)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/{feedback_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_feedback(feedback_id: int, db: Session = Depends(get_session)) -> None:
+    row = db.get(Feedback, feedback_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    db.delete(row)
+    db.commit()
