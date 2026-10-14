@@ -51,6 +51,26 @@ class BusinessProfileIn(BaseModel):
     auto_approve_types: list[str] = Field(default_factory=list)
 
 
+class BusinessProfilePatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    website_url: str | None = None
+    products: str | None = None
+    target_audience: str | None = None
+    call_to_action_url: str | None = None
+    tone: Tone | None = None
+    length: Length | None = None
+    emoji_density: EmojiDensity | None = None
+    language: str | None = None
+    post_type_ratios: dict | None = None
+    posting_window_start_hour: int | None = None
+    posting_window_end_hour: int | None = None
+    timezone: str | None = None
+    posts_per_day: int | None = None
+    review_before_posting: bool | None = None
+    auto_approve_types: list[str] | None = None
+
+
 class BusinessProfileOut(BusinessProfileIn):
     model_config = ConfigDict(from_attributes=True)
 
@@ -238,6 +258,11 @@ class PublishResultOut(BaseModel):
 class FeedbackIn(BaseModel):
     post_id: int
     rating: FeedbackRating
+    comment: str | None = None
+
+
+class FeedbackPatch(BaseModel):
+    rating: FeedbackRating | None = None
     comment: str | None = None
 
 
