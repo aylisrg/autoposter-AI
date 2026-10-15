@@ -266,3 +266,12 @@ setInterval(() => {
     }
   }
 }, 25000);
+
+
+// Listen for unsolicited health reports from content scripts.
+chrome.runtime.onMessage.addListener((msg, _sender, _sendResponse) => {
+  if (msg?.type === "session_unhealthy" && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "session_unhealthy", reason: msg.reason || "checkpoint detected" }));
+    console.warn("[autoposter-AI] forwarded session_unhealthy:", msg.reason);
+  }
+});

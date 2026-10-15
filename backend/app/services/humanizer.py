@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     BlackoutDate,
     HumanizerProfile,
+    LogEntry,
     SessionHealth,
     SessionHealthStatus,
 )
@@ -145,10 +146,10 @@ def on_failure(
     classification = classify_failure(reason)
     if classification.kind == "checkpoint":
         health.status = SessionHealthStatus.CHECKPOINT
-        _activate_pause(profile, reason=f"checkpoint detected: {reason[:200]}")
+        _activate_pause(profile, reason=f"checkpoint detected: {reason[:200]}", db=db)
     elif classification.kind == "shadow_ban":
         health.status = SessionHealthStatus.SHADOW_BAN_SUSPECTED
-        _activate_pause(profile, reason=f"shadow-ban pattern: {reason[:200]}")
+        _activate_pause(profile, reason=f"shadow-ban pattern: {reason[:200]}", db=db)
     elif health.consecutive_failures >= profile.consecutive_failures_threshold:
         health.status = SessionHealthStatus.PAUSED
         _activate_pause(
@@ -157,6 +158,7 @@ def on_failure(
                 f"{health.consecutive_failures} consecutive failures "
                 f"(threshold {profile.consecutive_failures_threshold})"
             ),
+            db=db,
         )
     else:
         health.status = SessionHealthStatus.WARNING
@@ -165,7 +167,7 @@ def on_failure(
     return health, profile
 
 
-def _activate_pause(profile: HumanizerProfile, reason: str) -> None:
+def _activate_pause(profile: HumanizerProfile, reason: str, db: Session | None = None) -> None:
     profile.smart_pause_until = datetime.now(UTC) + timedelta(
         minutes=profile.smart_pause_minutes
     )
@@ -173,6 +175,14 @@ def _activate_pause(profile: HumanizerProfile, reason: str) -> None:
     log.warning(
         "Smart pause activated: %s (until %s)", reason, profile.smart_pause_until
     )
+    if db is not None:
+        entry = LogEntry(
+            level="warn",
+            category="scheduler",
+            message=f"Smart pause activated: {reason}",
+            meta={"until": profile.smart_pause_until.isoformat() if profile.smart_pause_until else None, "reason": reason},
+        )
+        db.add(entry)
 
 
 def check_pause(db: Session, now: datetime | None = None) -> datetime | None:
@@ -197,6 +207,17 @@ def clear_pause(db: Session) -> None:
     profile = get_or_create_profile(db)
     profile.smart_pause_until = None
     profile.smart_pause_reason = None
+    db.commit()
+
+
+def on_session_unhealthy(db: Session, reason: str, platform_id: str = "facebook") -> None:
+    """Called when the extension reports an unsolicited session_unhealthy event."""
+    profile = get_or_create_profile(db)
+    health = _get_health(db, platform_id)
+    health.status = SessionHealthStatus.CHECKPOINT
+    health.last_failure_reason = reason
+    health.last_failure_at = datetime.now(UTC)
+    _activate_pause(profile, reason=f"extension reported unhealthy: {reason[:180]}", db=db)
     db.commit()
 
 
