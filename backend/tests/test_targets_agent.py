@@ -292,6 +292,33 @@ def test_cluster_writes_list_name_on_approved(client, profile_ready, fake_agent)
     assert all(t["list_name"] in {"Urban gardeners", "General cooks"} for t in reloaded)
 
 
+def test_target_list_crud_and_rename(client):
+    t1 = _mk_target(client, "https://fb/groups/a", "A")
+    t2 = _mk_target(client, "https://fb/groups/b", "B")
+    created = client.post(
+        "/api/targets/lists",
+        json={"name": "Old name", "description": "d", "target_ids": [t1["id"], t2["id"]]},
+    )
+    assert created.status_code == 201, created.text
+    list_id = created.json()["id"]
+
+    listed = client.get("/api/targets/lists")
+    assert listed.status_code == 200, listed.text
+    assert any(row["id"] == list_id for row in listed.json())
+
+    renamed = client.patch(f"/api/targets/lists/{list_id}", json={"name": "New name"})
+    assert renamed.status_code == 200, renamed.text
+    rows = {t["id"]: t for t in client.get("/api/targets").json()}
+    assert rows[t1["id"]]["list_name"] == "New name"
+    assert rows[t2["id"]]["list_name"] == "New name"
+
+    moved = client.patch(f"/api/targets/lists/{list_id}", json={"target_ids": [t1["id"]]})
+    assert moved.status_code == 200, moved.text
+    rows = {t["id"]: t for t in client.get("/api/targets").json()}
+    assert rows[t1["id"]]["list_name"] == "New name"
+    assert rows[t2["id"]]["list_name"] is None
+
+
 def test_list_filters_by_review_status(client):
     t1 = _mk_target(client, "https://fb/groups/a", "A", source="scraped_suggested")
     _mk_target(client, "https://fb/groups/b", "B", source="manual")  # auto-approved
