@@ -203,6 +203,9 @@ class Post(Base):
     scheduled_for: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     posted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    # Shadow-ban heuristic (M4)
+    possibly_shadowbanned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # Generation metadata
     generation_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     generation_model: Mapped[str | None] = mapped_column(String(100), nullable=True)

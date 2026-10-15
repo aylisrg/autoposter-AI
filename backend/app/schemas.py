@@ -577,6 +577,7 @@ class AnalyticsSummaryOut(BaseModel):
     comments: int
     shares: int
     avg_engagement_score: float
+    possibly_shadowbanned_count: int = 0
 
 
 class TopPerformerOut(BaseModel):
