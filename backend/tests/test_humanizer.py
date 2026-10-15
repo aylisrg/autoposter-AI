@@ -196,3 +196,34 @@ def test_session_health_listing(client, db):
     assert r.status_code == 200
     rows = r.json()
     assert any(row["platform_id"] == "facebook" for row in rows)
+
+
+# ---------- Action sequence ----------
+
+
+def test_generate_action_sequence_basic(db):
+    profile = _make_profile(
+        db,
+        typing_wpm_min=40,
+        typing_wpm_max=40,
+        mistake_rate=0.01,
+        idle_scroll_before_post_sec_min=5,
+        idle_scroll_before_post_sec_max=5,
+        pause_between_sentences_ms_min=300,
+        pause_between_sentences_ms_max=300,
+    )
+    from app.db.models import Post, PostType
+    post = Post(post_type=PostType.INFORMATIVE, text="Hello world this is a test post.")
+    seq = hz.generate_action_sequence(post, profile)
+    assert isinstance(seq, list)
+    assert len(seq) >= 5
+    actions = [a["action"] for a in seq]
+    assert actions[0] == "open_feed"
+    assert "scroll" in actions
+    assert "open_composer" in actions
+    assert "type" in actions
+    assert "post" in actions
+    type_step = next(a for a in seq if a["action"] == "type")
+    assert type_step["text"] == post.text
+    assert type_step["wpm"] == 40
+    assert type_step["mistake_rate"] == 0.01
