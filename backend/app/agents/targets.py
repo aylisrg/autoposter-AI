@@ -62,24 +62,26 @@ Guidelines:
 
 
 CLUSTER_SYSTEM = """You are helping a solo business owner organize their list of \
-communities into 3–6 named segments.
+communities into 2–5 named segments.
 
 Given a list of approved targets, cluster them into meaningful groups and name each group \
 with a short human-readable label (e.g. "Urban gardeners", "Permaculture & off-grid", \
-"Pest & disease help"). Every target gets exactly ONE label.
+"Pest & disease help"). Provide a one-sentence description for each list. Every target \
+gets exactly ONE label.
 
 ## Output
 Return a single JSON object:
 {
   "lists": [
-    {"name": "Urban gardeners", "target_ids": [3, 7, 12]},
-    {"name": "Permaculture & off-grid", "target_ids": [4, 9]}
+    {"name": "Urban gardeners", "description": "Apartment dwellers growing herbs indoors", "target_ids": [3, 7, 12]},
+    {"name": "Permaculture & off-grid", "description": "Sustainable living and off-grid communities", "target_ids": [4, 9]}
   ]
 }
 
 Guidelines:
-- 3–6 clusters is the sweet spot; fewer if targets are homogeneous, more if very diverse.
+- 2–5 clusters is the sweet spot; fewer if targets are homogeneous, more if very diverse.
 - Labels are short (2–4 words), title-case, human-facing.
+- Descriptions are one short sentence explaining the theme.
 - Every id from input MUST appear exactly once across all clusters.
 - If two groups feel the same, merge them.
 """
@@ -104,6 +106,7 @@ class ScoreResult:
 class ClusterAssignment:
     list_name: str
     target_ids: list[int]
+    description: str = ""
 
 
 @dataclass
@@ -226,7 +229,7 @@ def cluster_targets(profile: BusinessProfile, targets: list[Target]) -> ClusterR
     if len(targets) < 2:
         # Degenerate — single-bucket cluster. Cheap, no API call.
         return ClusterResult(
-            lists=[ClusterAssignment(list_name="All targets", target_ids=[t.id for t in targets])]
+            lists=[ClusterAssignment(list_name="All targets", description="All approved targets", target_ids=[t.id for t in targets])]
         )
     user = (
         "## Business\n" + _profile_block(profile) + "\n## Targets to cluster\n"
@@ -245,6 +248,7 @@ def cluster_targets(profile: BusinessProfile, targets: list[Target]) -> ClusterR
         if not isinstance(row, dict):
             continue
         name = str(row.get("name", "")).strip() or "Unlabeled"
+        description = str(row.get("description", "")).strip()
         ids_raw = row.get("target_ids") or []
         clean_ids: list[int] = []
         for raw_id in ids_raw:
@@ -256,12 +260,12 @@ def cluster_targets(profile: BusinessProfile, targets: list[Target]) -> ClusterR
                 clean_ids.append(tid)
                 seen.add(tid)
         if clean_ids:
-            assignments.append(ClusterAssignment(list_name=name, target_ids=clean_ids))
+            assignments.append(ClusterAssignment(list_name=name, description=description, target_ids=clean_ids))
 
     # Anything unplaced goes to "Other" so we don't silently lose targets.
     leftover = [t.id for t in targets if t.id not in seen]
     if leftover:
-        assignments.append(ClusterAssignment(list_name="Other", target_ids=leftover))
+        assignments.append(ClusterAssignment(list_name="Other", description="Uncategorized targets", target_ids=leftover))
 
     cost = in_tok * _COST_IN + out_tok * _COST_OUT
     return ClusterResult(

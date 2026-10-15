@@ -270,10 +270,10 @@ def test_bulk_review_approve_and_reject(client):
 
 
 def test_cluster_writes_list_name_on_approved(client, profile_ready, fake_agent):
-    t1 = _mk_target(client, "https://fb/groups/a", "A")
-    t2 = _mk_target(client, "https://fb/groups/b", "B")
-    t3 = _mk_target(client, "https://fb/groups/c", "C")
-    t4 = _mk_target(client, "https://fb/groups/d", "D")
+    t1 = _mk_target(client, "https://fb/groups/a", "Urban gardeners A")
+    t2 = _mk_target(client, "https://fb/groups/b", "Urban gardeners B")
+    t3 = _mk_target(client, "https://fb/groups/c", "Urban gardeners C")
+    t4 = _mk_target(client, "https://fb/groups/d", "Urban gardeners D")
     client.post(
         "/api/targets/bulk-review",
         json={
@@ -281,6 +281,8 @@ def test_cluster_writes_list_name_on_approved(client, profile_ready, fake_agent)
             "review_status": "approved",
         },
     )
+    # Score them so they qualify for clustering (score > 60)
+    client.post("/api/targets/score", json={"target_ids": [t1["id"], t2["id"], t3["id"], t4["id"]]})
     r = client.post("/api/targets/cluster", json={"target_ids": []})
     assert r.status_code == 200, r.text
     lists = r.json()["lists"]
