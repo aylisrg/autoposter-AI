@@ -92,8 +92,10 @@ class InstagramPlatform(Platform):
     # ------- Targets -------
 
     async def list_targets(self, db: Session | None = None) -> list[dict]:
-        """Return a single pseudo-target representing the connected IG Business
-        account. IG has no "groups" concept — every publish goes to the account.
+        """List manageable Instagram Business accounts via Graph API /me/accounts.
+
+        Each page that has an instagram_business_account becomes a target.
+        Falls back to the stored credential if the API call fails.
         """
         session = db or self._db
         if session is None:
@@ -101,13 +103,39 @@ class InstagramPlatform(Platform):
         cred = _get_credential(session)
         if cred is None:
             return []
-        return [
-            {
-                "external_id": cred.account_id,
-                "name": cred.username or f"Instagram ({cred.account_id})",
-                "meta": {"source": "meta_oauth"},
-            }
-        ]
+
+        targets: list[dict] = []
+        try:
+            pages = meta_graph.list_pages(cred.access_token)
+            for page in pages:
+                ig = page.get("instagram_business_account") or {}
+                ig_id = ig.get("id")
+                if not ig_id:
+                    continue
+                targets.append(
+                    {
+                        "external_id": ig_id,
+                        "name": page.get("name") or f"Instagram ({ig_id})",
+                        "meta": {
+                            "source": "meta_graph",
+                            "page_id": page.get("id"),
+                            "page_name": page.get("name"),
+                        },
+                    }
+                )
+        except Exception as exc:
+            log.warning("Failed to list IG accounts via Graph API: %s", exc)
+
+        # Fallback: at least the credential account itself
+        if not targets and cred.account_id:
+            targets.append(
+                {
+                    "external_id": cred.account_id,
+                    "name": cred.username or f"Instagram ({cred.account_id})",
+                    "meta": {"source": "meta_oauth"},
+                }
+            )
+        return targets
 
     # ------- Publishing -------
 

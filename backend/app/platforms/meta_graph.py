@@ -181,6 +181,29 @@ def list_pages(access_token: str) -> list[dict]:
     return data.get("data", [])
 
 
+def connected_threads_user_id(ig_user_id: str, access_token: str) -> str | None:
+    """Threads user id linked to an Instagram professional account.
+
+    GET /{ig-user-id}/connected_threads_user?fields=threads_user_id
+    A missing profile or a Graph error returns None — callers fall back
+    to the stored credential instead of inventing an id.
+    """
+    try:
+        with httpx.Client(timeout=30) as c:
+            resp = c.get(
+                f"{GRAPH_BASE}/{ig_user_id}/connected_threads_user",
+                params={"access_token": access_token, "fields": "threads_user_id"},
+            )
+        data = _raise_if_error(resp)
+    except Exception:
+        log.warning("connected_threads_user failed for ig user %s", ig_user_id, exc_info=True)
+        return None
+    if not isinstance(data, dict):
+        return None
+    tid = data.get("threads_user_id")
+    return str(tid) if tid else None
+
+
 # ---------- Instagram publishing ----------
 
 

@@ -566,9 +566,9 @@ function parseMemberCount(text: string): number | null {
 }
 
 async function listGroups(): Promise<
-  Array<{ url: string; name: string; role?: string }>
+  Array<{ url: string; name: string; member_count?: number; role?: string }>
 > {
-  const results: Array<{ url: string; name: string }> = [];
+  const results: Array<{ url: string; name: string; member_count?: number }> = [];
   const seen = new Set<string>();
   const links = document.querySelectorAll<HTMLAnchorElement>(
     'a[href*="/groups/"]',
@@ -583,8 +583,26 @@ async function listGroups(): Promise<
     if (seen.has(url)) continue;
     const text = a.textContent?.trim();
     if (!text || text.length < 2 || text.length > 200) continue;
+
+    // Try to extract member_count from nearby text (card or parent)
+    let member_count: number | undefined;
+    const card = a.closest<HTMLElement>('[role="article"], [data-visualcompletion="ignore-dynamic"]') ?? a.parentElement?.parentElement;
+    if (card) {
+      const cardText = card.innerText || "";
+      const lines = cardText.split("\n").map(l => l.trim()).filter(Boolean);
+      for (const line of lines) {
+        if (/member|участник|miembro|mitglied/i.test(line)) {
+          const parsed = parseMemberCount(line);
+          if (parsed != null) {
+            member_count = parsed;
+            break;
+          }
+        }
+      }
+    }
+
     seen.add(url);
-    results.push({ url, name: text });
+    results.push({ url, name: text, member_count });
   }
   return results;
 }

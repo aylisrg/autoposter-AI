@@ -160,6 +160,7 @@ class Target(Base):
         Enum(TargetReviewStatus), default=TargetReviewStatus.PENDING
     )
     source: Mapped[str] = mapped_column(String(30), default="manual")
+    discovered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
