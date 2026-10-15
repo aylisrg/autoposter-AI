@@ -18,6 +18,7 @@ from app.api import (
     plans,
     platform_credentials,
     posts,
+    review,
     targets,
 )
 
@@ -28,6 +29,7 @@ api_router.include_router(dashboard.router)
 api_router.include_router(business_profile.router)
 api_router.include_router(targets.router)
 api_router.include_router(posts.router)
+api_router.include_router(review.router)
 api_router.include_router(plans.router)
 api_router.include_router(feedback.router)
 api_router.include_router(media.router)

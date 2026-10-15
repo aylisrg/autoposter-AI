@@ -355,7 +355,7 @@ export default function ProfilePage() {
               </FieldLabel>
               {suggestedTypes.length > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  Suggested (reached {threshold} recent approvals):{" "}
+                  Suggested (last {threshold} approvals had no edits):{" "}
                   {suggestedTypes.map(labelForPostType).join(", ")}. Click to enable.
                 </p>
               )}
@@ -370,7 +370,7 @@ export default function ProfilePage() {
                       onClick={() => toggleAuto(opt.value)}
                       title={
                         suggested
-                          ? `Suggested: ${threshold} recent posts of this type were approved. Click to auto-approve.`
+                          ? `Suggested: the last ${threshold} posts of this type were approved without edits. Click to auto-approve.`
                           : undefined
                       }
                       className={

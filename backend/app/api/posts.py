@@ -21,6 +21,8 @@ from app.db.models import (
     Post,
     PostStatus,
     PostVariant,
+    ReviewQueueItem,
+    ReviewQueueStatus,
     Target,
 )
 from app.platforms.registry import get_platform
@@ -166,6 +168,14 @@ def generate(
     refreshed = _eager_load(db, post.id)
     if refreshed is None:
         raise HTTPException(status_code=500, detail="Post vanished after commit")
+    # M5: auto-add to review queue when review_before_posting is on and not auto-approved
+    if initial_status == PostStatus.PENDING_REVIEW:
+        queue_item = ReviewQueueItem(
+            post_id=refreshed.id,
+            status=ReviewQueueStatus.PENDING,
+        )
+        db.add(queue_item)
+        db.commit()
     return refreshed
 
 

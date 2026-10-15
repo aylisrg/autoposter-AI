@@ -4,11 +4,28 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_current_profile, get_session, invalidate_profile_cache
-from app.db.models import BusinessProfile
+from app.db.models import (
+    BusinessProfile,
+    Post,
+    PostStatus,
+    PostType,
+    ReviewQueueItem,
+    ReviewQueueStatus,
+)
 from app.schemas import BusinessProfileIn, BusinessProfileOut, BusinessProfilePatch
 
 router = APIRouter(prefix="/api/business-profile", tags=["business-profile"])
+
+# Statuses a post reaches only after a clean approval (or auto-approve).
+# Skips, failures, and still-pending posts do not count toward the suggestion.
+_CLEAN_APPROVAL_STATUSES = (
+    PostStatus.DRAFT,
+    PostStatus.SCHEDULED,
+    PostStatus.POSTING,
+    PostStatus.POSTED,
+)
 
 
 @router.get("", response_model=BusinessProfileOut)
@@ -92,40 +109,51 @@ def delete_profile(db: Session = Depends(get_session)) -> None:
     invalidate_profile_cache()
 
 
-from app.config import settings
-from app.db.models import Post, PostStatus, PostType
-
-
 @router.get("/suggestions")
 def get_auto_approve_suggestions(
     profile: BusinessProfile | None = Depends(get_current_profile),
     db: Session = Depends(get_session),
 ) -> dict:
-    """Return post types that have reached the approval threshold and are not yet auto-approved.
+    """Suggest types whose last N approvals were made without edits.
 
-    Threshold defaults to 10 recent non-pending-review posts of that type.
+    Issue #35: per post type, if the most recent ``auto_approve_threshold``
+    approvals (default 10) contain no edits, the UI can offer to turn
+    auto-approve on. Rejects, skips, and failed posts do not count.
     """
-    if profile is None:
-        return {"suggested_types": [], "threshold": 10}
-
     threshold = settings.auto_approve_threshold
-    already = set(profile.auto_approve_types or [])
+    if profile is None:
+        return {"suggested_types": [], "threshold": threshold}
 
+    already = set(profile.auto_approve_types or [])
     suggested: list[str] = []
     for ptype in PostType:
         if ptype.value in already:
             continue
-        recent = (
-            db.query(Post.id)
-            .filter(
-                Post.post_type == ptype,
-                Post.status != PostStatus.PENDING_REVIEW,
+        recent_ids = [
+            row[0]
+            for row in (
+                db.query(Post.id)
+                .filter(
+                    Post.post_type == ptype,
+                    Post.status.in_(_CLEAN_APPROVAL_STATUSES),
+                )
+                .order_by(Post.created_at.desc(), Post.id.desc())
+                .limit(threshold)
+                .all()
             )
-            .order_by(Post.created_at.desc())
-            .limit(threshold)
-            .all()
+        ]
+        if len(recent_ids) < threshold:
+            continue
+        edited = (
+            db.query(ReviewQueueItem.id)
+            .filter(
+                ReviewQueueItem.post_id.in_(recent_ids),
+                ReviewQueueItem.status == ReviewQueueStatus.EDITED,
+            )
+            .first()
         )
-        if len(recent) >= threshold:
-            suggested.append(ptype.value)
+        if edited is not None:
+            continue
+        suggested.append(ptype.value)
 
     return {"suggested_types": suggested, "threshold": threshold}
