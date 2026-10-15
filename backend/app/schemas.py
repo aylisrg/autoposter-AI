@@ -682,3 +682,32 @@ class MetaManualCredentialIn(BaseModel):
     account_id: str
     username: str | None = None
     access_token: str
+
+
+# ---------- Review Queue (M5) ----------
+
+
+class ReviewQueueStatusOut(str):
+    """Mirror of the enum for schema validation."""
+    pass
+
+
+class ReviewQueueItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    post_id: int
+    status: str
+    reviewed_at: datetime | None = None
+    reviewer_action: dict | None = None
+    created_at: datetime
+
+
+class ReviewQueueEditRequest(BaseModel):
+    text: str | None = None
+    media_asset_id: int | None = None
+    image_url: str | None = None
+
+
+class ReviewQueueBulkApproveRequest(BaseModel):
+    ids: list[int] = Field(default_factory=list)
