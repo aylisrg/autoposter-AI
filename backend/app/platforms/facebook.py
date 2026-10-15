@@ -87,6 +87,32 @@ class FacebookPlatform(Platform):
             transient=not is_permanent,
         )
 
+    async def verify_visibility(self, post_url: str) -> dict | None:
+        """Ask the extension to check if a published post is visible (shadow-ban heuristic).
+
+        The extension opens the post URL and runs verifyVisibility in the content script.
+        """
+        if not post_url or not post_url.startswith("http"):
+            return None
+        request_id = uuid.uuid4().hex
+        try:
+            response = await bridge.request(
+                {
+                    "type": "verify_visibility",
+                    "request_id": request_id,
+                    "post_url": post_url,
+                },
+                timeout=60,
+            )
+        except TimeoutError:
+            return None
+        if not response.get("ok"):
+            return None
+        return {
+            "visible": bool(response.get("visible", True)),
+            "reason": response.get("reason"),
+        }
+
     async def fetch_metrics(self, external_post_id: str) -> dict | None:
         """Ask the extension to scrape likes/comments/shares from a post URL.
 

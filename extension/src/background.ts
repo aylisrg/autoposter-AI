@@ -66,11 +66,27 @@ async function routeCommand(msg: Record<string, unknown>): Promise<Record<string
       return await handleFetchMetrics(msg);
     case "smoke":
       return await handleSmoke();
+    case "verify_visibility":
+      return await handleVerifyVisibility(msg);
     case "ping":
       return { pong: true };
     default:
       throw new Error(`Unknown command: ${type}`);
   }
+}
+
+async function handleVerifyVisibility(msg: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const postUrl = msg.post_url as string;
+  if (!postUrl || !postUrl.startsWith("http")) {
+    throw new Error("verify_visibility requires a valid post_url");
+  }
+  const tab = await openOrFocusFacebookTab(postUrl);
+  if (!tab.id) throw new Error("Could not obtain tab id");
+  await waitForTabComplete(tab.id);
+  await ensureContentScript(tab.id);
+  const response = await sendToTab(tab.id, { type: "verify_visibility", post_url: postUrl });
+  if (!response?.ok) throw new Error(response?.error || "verify_visibility failed in content script");
+  return { visible: response.visible, reason: response.reason };
 }
 
 async function handleSmoke(): Promise<Record<string, unknown>> {

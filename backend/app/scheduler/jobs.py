@@ -385,3 +385,107 @@ async def weekly_analyst_tick() -> None:
         log.exception("weekly_analyst_tick crashed")
     finally:
         db.close()
+
+
+def leading_shadowban_streak(flags_newest_first: list[bool]) -> int:
+    """Count a leading run of shadow-ban flags, newest post first."""
+    streak = 0
+    for flagged in flags_newest_first:
+        if not flagged:
+            break
+        streak += 1
+    return streak
+
+
+async def check_shadowbans_tick() -> None:
+    """Check recently posted Facebook posts for possible shadow-ban (5 min after publish).
+
+    For posts posted 5–15 minutes ago that are not yet flagged, ask the extension
+    to verify visibility. If not visible, set Post.possibly_shadowbanned.
+    Inconclusive checks (timeout, extension down) do not count as visible.
+
+    Smart pause looks at the newest Facebook posts old enough to have been
+    checked, including ones flagged on earlier ticks. Three leading positives
+    activate the existing humanizer pause.
+    """
+    from app.platforms.facebook import FacebookPlatform
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(UTC)
+        window_start = now - timedelta(minutes=15)
+        window_end = now - timedelta(minutes=5)
+        candidates = (
+            db.query(Post)
+            .filter(Post.status == PostStatus.POSTED)
+            .filter(Post.posted_at.isnot(None))
+            .filter(Post.posted_at >= window_start)
+            .filter(Post.posted_at <= window_end)
+            .filter(Post.possibly_shadowbanned.is_(False))
+            .order_by(Post.posted_at.asc())
+            .all()
+        )
+
+        platform = FacebookPlatform()
+        for post in candidates:
+            variant = (
+                db.query(PostVariant)
+                .join(Target)
+                .filter(PostVariant.post_id == post.id)
+                .filter(Target.platform_id == "facebook")
+                .filter(PostVariant.external_post_id.isnot(None))
+                .first()
+            )
+            if not variant or not variant.external_post_id:
+                continue
+            try:
+                result = await platform.verify_visibility(variant.external_post_id)
+            except Exception:
+                log.exception("verify_visibility failed for post %d", post.id)
+                continue
+            if not result:
+                continue
+            if not result.get("visible", True):
+                post.possibly_shadowbanned = True
+                log.warning(
+                    "Post %d possibly shadowbanned (reason=%s)",
+                    post.id,
+                    result.get("reason"),
+                )
+                db.commit()
+
+        recent = (
+            db.query(Post)
+            .join(PostVariant)
+            .join(Target)
+            .filter(Post.status == PostStatus.POSTED)
+            .filter(Post.posted_at.isnot(None))
+            .filter(Post.posted_at <= window_end)
+            .filter(Target.platform_id == "facebook")
+            .filter(PostVariant.external_post_id.isnot(None))
+            .order_by(Post.posted_at.desc())
+            .limit(10)
+            .all()
+        )
+        seen: set[int] = set()
+        flags: list[bool] = []
+        for post in recent:
+            if post.id in seen:
+                continue
+            seen.add(post.id)
+            flags.append(bool(post.possibly_shadowbanned))
+
+        if leading_shadowban_streak(flags) >= 3:
+            profile = hz.get_or_create_profile(db)
+            hz._activate_pause(
+                profile, reason="3 consecutive possibly_shadowbanned posts"
+            )
+            db.commit()
+            log.warning(
+                "Smart pause activated due to 3 consecutive shadow-ban heuristics"
+            )
+    except Exception:
+        log.exception("check_shadowbans_tick crashed")
+    finally:
+        db.close()
+

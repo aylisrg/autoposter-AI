@@ -97,6 +97,13 @@ def analytics_summary(
         .first()
         or (0, 0, 0, 0.0)
     )
+    shadowbanned = (
+        db.query(func.count(Post.id))
+        .filter(Post.possibly_shadowbanned.is_(True))
+        .filter(Post.posted_at >= period_start)
+        .scalar()
+        or 0
+    )
     return AnalyticsSummaryOut(
         period_days=days,
         posts=int(total_posts),
@@ -104,6 +111,7 @@ def analytics_summary(
         comments=int(totals[1]),
         shares=int(totals[2]),
         avg_engagement_score=float(totals[3] or 0.0),
+        possibly_shadowbanned_count=int(shadowbanned),
     )
 
 

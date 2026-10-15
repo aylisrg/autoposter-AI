@@ -52,6 +52,7 @@ type ListSuggestedMsg = { type: "list_suggested_groups" };
 type FetchMetricsMsg = { type: "fetch_metrics" };
 type SmokeMsg = { type: "smoke" };
 type CsPingMsg = { type: "cs_ping" };
+type VerifyVisibilityMsg = { type: "verify_visibility"; post_url: string };
 
 type Msg =
   | PublishMsg
@@ -59,7 +60,8 @@ type Msg =
   | ListSuggestedMsg
   | FetchMetricsMsg
   | SmokeMsg
-  | CsPingMsg;
+  | CsPingMsg
+  | VerifyVisibilityMsg;
 
 chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
   (async () => {
@@ -93,6 +95,11 @@ chrome.runtime.onMessage.addListener((msg: Msg, _sender, sendResponse) => {
         case "smoke": {
           const report = await runSmoke();
           sendResponse({ ok: true, report });
+          break;
+        }
+        case "verify_visibility": {
+          const result = await verifyVisibility(msg.post_url);
+          sendResponse({ ok: true, ...result });
           break;
         }
       }
@@ -716,6 +723,30 @@ function parseCount(text: string): number | null {
  * We return zeros for things we couldn't find (rather than throwing) — the
  * backend records a sparse row and tries again next window.
  */
+async function verifyVisibility(postUrl: string): Promise<{ visible: boolean; reason?: string }> {
+  // Heuristic: look for common "content not available" / logged-out indicators.
+  // Full incognito check would require a separate window; this is a best-effort
+  // content-script check after the background has navigated to the post URL.
+  try {
+    const text = document.body?.innerText?.toLowerCase() || "";
+    const notAvailable =
+      text.includes("this content isn't available") ||
+      text.includes("content isn't available") ||
+      text.includes("контент недоступен") ||
+      text.includes("этот контент недоступен") ||
+      text.includes("page not found") ||
+      text.includes("страница не найдена");
+    if (notAvailable) {
+      return { visible: false, reason: "content_not_available" };
+    }
+    // If we see an article or the post text snippet, consider visible
+    const hasArticle = document.querySelector('[role="article"]') !== null;
+    return { visible: hasArticle || text.length > 200, reason: hasArticle ? "article_found" : "page_has_content" };
+  } catch (err) {
+    return { visible: true, reason: "check_failed_default_visible" };
+  }
+}
+
 async function scrapePostMetrics(): Promise<ScrapedMetrics> {
   // Give the page one more beat for async counters to hydrate.
   await sleep(800);

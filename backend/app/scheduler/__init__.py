@@ -30,6 +30,7 @@ class SchedulerSingleton:
             return
         # Late import: jobs.py imports models, which require db init first.
         from app.scheduler.jobs import (
+            check_shadowbans_tick,
             collect_follower_snapshots_tick,
             collect_metrics_tick,
             daily_backup_tick,
@@ -47,6 +48,15 @@ class SchedulerSingleton:
             coalesce=True,
             max_instances=1,
             next_run_time=datetime.utcnow(),
+        )
+        # Shadow-ban visibility check (M4) — every 60s, looks for posts 5+ min old.
+        self._impl.add_job(
+            check_shadowbans_tick,
+            trigger="interval",
+            seconds=60,
+            id="check_shadowbans",
+            coalesce=True,
+            max_instances=1,
         )
         # Metrics collection (M6) — hourly, best effort.
         self._impl.add_job(
