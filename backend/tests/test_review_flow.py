@@ -225,3 +225,66 @@ def test_thumbs_feedback_on_pending_post(client, fake_generate_post):
         json={"post_id": post["id"], "rating": "up"},
     )
     assert r.status_code == 201
+
+
+def test_review_queue_auto_add_and_endpoints(client, fake_generate_post):
+    """ReviewQueueItem is created on generate when review is enabled,
+    and the dedicated /api/review endpoints work.
+    """
+    _put_profile(client, review_before_posting=True)
+    post = _generate(client)
+    assert post["status"] == "pending_review"
+
+    # list queue
+    r = client.get("/api/review")
+    assert r.status_code == 200, r.text
+    items = r.json()
+    assert len(items) == 1
+    item = items[0]
+    assert item["post_id"] == post["id"]
+    assert item["status"] == "pending"
+
+    # approve
+    r = client.post(f"/api/review/{item['id']}/approve")
+    assert r.status_code == 200, r.text
+    approved = r.json()
+    assert approved["status"] == "approved"
+    assert approved["reviewed_at"] is not None
+
+    # generate another for edit/reject
+    post2 = _generate(client)
+    r = client.get("/api/review?status_filter=pending")
+    pending = r.json()
+    assert len(pending) == 1
+    item2 = pending[0]
+
+    # edit
+    r = client.post(
+        f"/api/review/{item2['id']}/edit",
+        json={"text": "Edited text", "image_url": "https://example.com/img.jpg"},
+    )
+    assert r.status_code == 200, r.text
+    edited = r.json()
+    assert edited["status"] == "edited"
+    assert edited["reviewer_action"]["changes"]["text"] == "Edited text"
+
+    # one more for reject + bulk
+    post3 = _generate(client)
+    post4 = _generate(client)
+    r = client.get("/api/review?status_filter=pending")
+    pending = r.json()
+    assert len(pending) == 2
+    ids = [p["id"] for p in pending]
+
+    r = client.post("/api/review/bulk_approve", json={"ids": ids[:1]})
+    assert r.status_code == 200, r.text
+    bulk = r.json()
+    assert len(bulk) == 1
+    assert bulk[0]["status"] == "approved"
+
+    # reject the last
+    last_id = ids[1]
+    r = client.post(f"/api/review/{last_id}/reject")
+    assert r.status_code == 200, r.text
+    rejected = r.json()
+    assert rejected["status"] == "rejected"
