@@ -165,6 +165,22 @@ class Target(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+
+class TargetList(Base):
+    """Named cluster of targets produced by the TargetAgent (M3).
+
+    `target_ids` is the ordered list of Target.id values that belong to this
+    segment. The user can rename the list or move targets between lists.
+    """
+    __tablename__ = "target_lists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Post(Base):
     """A single logical post. May have many PostVariants (spintax per target)."""
     __tablename__ = "posts"

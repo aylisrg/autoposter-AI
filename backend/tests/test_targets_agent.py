@@ -270,10 +270,10 @@ def test_bulk_review_approve_and_reject(client):
 
 
 def test_cluster_writes_list_name_on_approved(client, profile_ready, fake_agent):
-    t1 = _mk_target(client, "https://fb/groups/a", "A")
-    t2 = _mk_target(client, "https://fb/groups/b", "B")
-    t3 = _mk_target(client, "https://fb/groups/c", "C")
-    t4 = _mk_target(client, "https://fb/groups/d", "D")
+    t1 = _mk_target(client, "https://fb/groups/a", "Urban gardeners A")
+    t2 = _mk_target(client, "https://fb/groups/b", "Urban gardeners B")
+    t3 = _mk_target(client, "https://fb/groups/c", "Urban gardeners C")
+    t4 = _mk_target(client, "https://fb/groups/d", "Urban gardeners D")
     client.post(
         "/api/targets/bulk-review",
         json={
@@ -281,6 +281,8 @@ def test_cluster_writes_list_name_on_approved(client, profile_ready, fake_agent)
             "review_status": "approved",
         },
     )
+    # Score them so they qualify for clustering (score > 60)
+    client.post("/api/targets/score", json={"target_ids": [t1["id"], t2["id"], t3["id"], t4["id"]]})
     r = client.post("/api/targets/cluster", json={"target_ids": []})
     assert r.status_code == 200, r.text
     lists = r.json()["lists"]
@@ -288,6 +290,33 @@ def test_cluster_writes_list_name_on_approved(client, profile_ready, fake_agent)
     # All four targets should now have a list_name.
     reloaded = client.get("/api/targets").json()
     assert all(t["list_name"] in {"Urban gardeners", "General cooks"} for t in reloaded)
+
+
+def test_target_list_crud_and_rename(client):
+    t1 = _mk_target(client, "https://fb/groups/a", "A")
+    t2 = _mk_target(client, "https://fb/groups/b", "B")
+    created = client.post(
+        "/api/targets/lists",
+        json={"name": "Old name", "description": "d", "target_ids": [t1["id"], t2["id"]]},
+    )
+    assert created.status_code == 201, created.text
+    list_id = created.json()["id"]
+
+    listed = client.get("/api/targets/lists")
+    assert listed.status_code == 200, listed.text
+    assert any(row["id"] == list_id for row in listed.json())
+
+    renamed = client.patch(f"/api/targets/lists/{list_id}", json={"name": "New name"})
+    assert renamed.status_code == 200, renamed.text
+    rows = {t["id"]: t for t in client.get("/api/targets").json()}
+    assert rows[t1["id"]]["list_name"] == "New name"
+    assert rows[t2["id"]]["list_name"] == "New name"
+
+    moved = client.patch(f"/api/targets/lists/{list_id}", json={"target_ids": [t1["id"]]})
+    assert moved.status_code == 200, moved.text
+    rows = {t["id"]: t for t in client.get("/api/targets").json()}
+    assert rows[t1["id"]]["list_name"] == "New name"
+    assert rows[t2["id"]]["list_name"] is None
 
 
 def test_list_filters_by_review_status(client):

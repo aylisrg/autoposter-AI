@@ -150,6 +150,7 @@ class TargetClusterRequest(BaseModel):
 
 class TargetClusterGroup(BaseModel):
     list_name: str
+    description: str = ""
     target_ids: list[int]
 
 
@@ -161,6 +162,29 @@ class TargetClusterResponse(BaseModel):
 class TargetBulkReviewRequest(BaseModel):
     target_ids: list[int]
     review_status: TargetReviewStatus
+
+
+
+class TargetListIn(BaseModel):
+    name: str
+    description: str | None = None
+    target_ids: list[int] = Field(default_factory=list)
+
+
+class TargetListPatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    target_ids: list[int] | None = None
+
+
+class TargetListOut(BaseModel):
+    id: int
+    name: str
+    description: str | None
+    target_ids: list[int]
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ---------- Post ----------

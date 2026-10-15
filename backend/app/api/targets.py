@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.targets import cluster_targets, score_targets
 from app.db import get_current_profile, get_session
-from app.db.models import BusinessProfile, Target, TargetReviewStatus
+from app.db.models import BusinessProfile, Target, TargetList, TargetReviewStatus
 from app.platforms.facebook import FacebookPlatform
 from app.schemas import (
     TargetBulkReviewRequest,
@@ -29,6 +29,9 @@ from app.schemas import (
     TargetClusterResponse,
     TargetDiscoverResult,
     TargetIn,
+    TargetListIn,
+    TargetListOut,
+    TargetListPatch,
     TargetOut,
     TargetPatch,
     TargetScoreItem,
@@ -96,6 +99,87 @@ def create_target(payload: TargetIn, db: Session = Depends(get_session)) -> Targ
     db.commit()
     db.refresh(target)
     return target
+
+
+# ---------- Target lists CRUD ----------
+# Registered before /{target_id} so "lists" is not parsed as an integer id.
+
+
+@router.get("/lists", response_model=list[TargetListOut])
+def list_target_lists(db: Session = Depends(get_session)) -> list[TargetList]:
+    return db.query(TargetList).order_by(TargetList.created_at.desc()).all()
+
+
+@router.post("/lists", response_model=TargetListOut, status_code=status.HTTP_201_CREATED)
+def create_target_list(payload: TargetListIn, db: Session = Depends(get_session)) -> TargetList:
+    tl = TargetList(
+        name=payload.name,
+        description=payload.description,
+        target_ids=payload.target_ids,
+    )
+    db.add(tl)
+    if payload.target_ids:
+        targets = db.query(Target).filter(Target.id.in_(payload.target_ids)).all()
+        for t in targets:
+            t.list_name = payload.name
+    db.commit()
+    db.refresh(tl)
+    return tl
+
+
+@router.get("/lists/{list_id}", response_model=TargetListOut)
+def get_target_list(list_id: int, db: Session = Depends(get_session)) -> TargetList:
+    tl = db.get(TargetList, list_id)
+    if tl is None:
+        raise HTTPException(status_code=404, detail="TargetList not found")
+    return tl
+
+
+@router.patch("/lists/{list_id}", response_model=TargetListOut)
+def patch_target_list(
+    list_id: int, payload: TargetListPatch, db: Session = Depends(get_session)
+) -> TargetList:
+    tl = db.get(TargetList, list_id)
+    if tl is None:
+        raise HTTPException(status_code=404, detail="TargetList not found")
+    data = payload.model_dump(exclude_unset=True)
+    old_name = tl.name
+    previous_ids = list(tl.target_ids or [])
+    if "name" in data and data["name"]:
+        tl.name = data["name"]
+    if "description" in data:
+        tl.description = data["description"]
+    if "target_ids" in data and data["target_ids"] is not None:
+        new_ids = list(data["target_ids"])
+        for other in db.query(TargetList).filter(TargetList.id != list_id).all():
+            other.target_ids = [i for i in (other.target_ids or []) if i not in new_ids]
+        removed = [i for i in previous_ids if i not in new_ids]
+        if removed:
+            for t in db.query(Target).filter(Target.id.in_(removed)).all():
+                if t.list_name == old_name:
+                    t.list_name = None
+        tl.target_ids = new_ids
+    member_ids = list(tl.target_ids or [])
+    if member_ids and (tl.name != old_name or "target_ids" in data):
+        for t in db.query(Target).filter(Target.id.in_(member_ids)).all():
+            t.list_name = tl.name
+    db.commit()
+    db.refresh(tl)
+    return tl
+
+
+@router.delete("/lists/{list_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_target_list(list_id: int, db: Session = Depends(get_session)) -> None:
+    tl = db.get(TargetList, list_id)
+    if tl is None:
+        raise HTTPException(status_code=404, detail="TargetList not found")
+    if tl.target_ids:
+        targets = db.query(Target).filter(Target.id.in_(tl.target_ids)).all()
+        for t in targets:
+            if t.list_name == tl.name:
+                t.list_name = None
+    db.delete(tl)
+    db.commit()
 
 
 @router.get("/{target_id}", response_model=TargetOut)
@@ -276,6 +360,8 @@ def cluster_approved_targets(
         q = q.filter(Target.id.in_(payload.target_ids))
     else:
         q = q.filter(Target.review_status == TargetReviewStatus.APPROVED)
+    # Only high-relevance targets as specified (score > 60)
+    q = q.filter(Target.relevance_score > 60)
     targets = q.all()
     if not targets:
         return TargetClusterResponse(lists=[], cost_usd=0.0)
@@ -287,7 +373,15 @@ def cluster_approved_targets(
         raise HTTPException(status_code=502, detail=f"TargetAgent failed: {exc}") from exc
 
     by_id = {t.id: t for t in targets}
+    # Replace existing lists
+    db.query(TargetList).delete()
     for group in result.lists:
+        tl = TargetList(
+            name=group.list_name,
+            description=group.description or None,
+            target_ids=group.target_ids,
+        )
+        db.add(tl)
         for tid in group.target_ids:
             t = by_id.get(tid)
             if t is not None:
@@ -295,7 +389,11 @@ def cluster_approved_targets(
     db.commit()
     return TargetClusterResponse(
         lists=[
-            TargetClusterGroup(list_name=g.list_name, target_ids=g.target_ids)
+            TargetClusterGroup(
+                list_name=g.list_name,
+                description=g.description,
+                target_ids=g.target_ids,
+            )
             for g in result.lists
         ],
         cost_usd=result.cost_usd,
