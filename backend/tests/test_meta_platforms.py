@@ -403,3 +403,71 @@ async def test_instagram_list_targets_falls_back_on_api_error(db):
     assert len(targets) == 1
     assert targets[0]["external_id"] == "fallback-ig"
     assert targets[0]["meta"]["source"] == "meta_oauth"
+
+
+@pytest.mark.asyncio
+async def test_threads_list_targets_uses_connected_threads_user(db):
+    """Threads ids come from connected_threads_user, never from the page or IG id."""
+    cred = PlatformCredential(
+        platform_id="threads",
+        account_id="fallback-th",
+        username="thuser",
+        access_token="tok",
+    )
+    db.add(cred)
+    db.commit()
+
+    pages = [
+        {
+            "id": "page1",
+            "name": "Page One",
+            "access_token": "ptok",
+            "instagram_business_account": {"id": "ig-123"},
+        },
+        {"id": "page2", "name": "Page Two"},
+    ]
+
+    def _threads_id(ig_user_id, access_token):
+        assert ig_user_id == "ig-123"
+        assert access_token == "ptok"
+        return "th-999"
+
+    with (
+        patch("app.platforms.meta_graph.list_pages", return_value=pages),
+        patch("app.platforms.meta_graph.connected_threads_user_id", side_effect=_threads_id),
+    ):
+        targets = await ThreadsPlatform(db=db).list_targets()
+
+    assert len(targets) == 1
+    assert targets[0]["external_id"] == "th-999"
+    assert targets[0]["external_id"] not in {"page1", "ig-123"}
+    assert targets[0]["meta"]["source"] == "meta_graph"
+
+
+@pytest.mark.asyncio
+async def test_threads_list_targets_falls_back_when_no_threads_profile(db):
+    cred = PlatformCredential(
+        platform_id="threads",
+        account_id="fallback-th",
+        username="thuser",
+        access_token="tok",
+    )
+    db.add(cred)
+    db.commit()
+
+    pages = [
+        {
+            "id": "page1",
+            "name": "Page One",
+            "instagram_business_account": {"id": "ig-123"},
+        }
+    ]
+    with (
+        patch("app.platforms.meta_graph.list_pages", return_value=pages),
+        patch("app.platforms.meta_graph.connected_threads_user_id", return_value=None),
+    ):
+        targets = await ThreadsPlatform(db=db).list_targets()
+
+    assert len(targets) == 1
+    assert targets[0]["external_id"] == "fallback-th"
+    assert targets[0]["meta"]["source"] == "meta_oauth"

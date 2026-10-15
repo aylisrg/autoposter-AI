@@ -90,13 +90,14 @@ class ThreadsPlatform(Platform):
         try:
             pages = meta_graph.list_pages(cred.access_token)
             for page in pages:
-                # Threads user id may appear under different keys depending on API version;
-                # also accept the page itself as a proxy when no dedicated field is present.
-                threads_id = (
-                    page.get("threads_user_id")
-                    or (page.get("instagram_business_account") or {}).get("id")
-                    or page.get("id")
-                )
+                # Only a real Threads user id is valid. Page ids and Instagram
+                # business ids are different objects and will fail publish.
+                threads_id = page.get("threads_user_id")
+                if not threads_id:
+                    ig = (page.get("instagram_business_account") or {}).get("id")
+                    if ig:
+                        token = page.get("access_token") or cred.access_token
+                        threads_id = meta_graph.connected_threads_user_id(ig, token)
                 if not threads_id:
                     continue
                 targets.append(
