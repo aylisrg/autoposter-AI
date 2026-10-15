@@ -226,7 +226,7 @@ export default function PlanDetailPage({
       const res = await chatPlan(plan.id, msg);
       setPlan(res.plan);
       const updated = res.plan.slots.find((s) => s.id === slot.id);
-      if (updated) setSelectedSlot(updated);
+      setSelectedSlot(updated ?? null);
     } catch (e) {
       setError(
         e instanceof ApiError
@@ -400,6 +400,7 @@ export default function PlanDetailPage({
               onDelete={() => handleSlotDelete(selectedSlot.id)}
               onGenerate={() => handleGeneratePost(selectedSlot.id)}
               onRegenerate={() => handleRegenerateSlot(selectedSlot)}
+              regenerating={chatBusy}
               onAttached={() => refresh()}
             />
           ) : (
@@ -593,45 +594,69 @@ function WeekView({
   onSelect: (s: PlanSlot) => void;
   onDragStart: (e: React.DragEvent, id: number) => void;
 }) {
-  // Show first 7 days or group into weeks; for simplicity take consecutive days as weeks
-  const weeks: typeof days[] = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
+  if (days.length === 0) return null;
+  // Align to calendar weeks (Sun–Sat), same as MonthView. Chunking from
+  // plan start put Wednesday in column 1 whenever the range did not start Sunday.
+  const first = days[0].date;
+  const startPad = first.getDay();
+  const padded: ({ date: Date; slots: PlanSlot[] } | null)[] = [
+    ...Array(startPad).fill(null),
+    ...days,
+  ];
+  while (padded.length % 7 !== 0) padded.push(null);
+  const weeks: typeof padded[] = [];
+  for (let i = 0; i < padded.length; i += 7) {
+    weeks.push(padded.slice(i, i + 7));
   }
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   return (
-    <div className="space-y-6">
+    <div className="space-y-2">
+      <div className="grid grid-cols-7 gap-1 text-[10px] text-muted-foreground">
+        {weekdays.map((w) => (
+          <div key={w} className="text-center font-medium">
+            {w}
+          </div>
+        ))}
+      </div>
       {weeks.map((week, wi) => (
         <div key={wi} className="grid grid-cols-7 gap-1">
-          {week.map(({ date, slots }) => (
-            <div
-              key={date.toISOString()}
-              className="border rounded min-h-[120px] p-1 bg-card"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => onDrop(e, date)}
-            >
-              <div className="text-[10px] font-medium flex justify-between">
-                <span>
-                  {date.toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}
-                </span>
-                <button
-                  className="text-muted-foreground hover:text-foreground"
-                  onClick={() => onAdd(date)}
-                >
-                  +
-                </button>
+          {week.map((cell, ci) =>
+            cell ? (
+              <div
+                key={cell.date.toISOString()}
+                className="border rounded min-h-[120px] p-1 bg-card"
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => onDrop(e, cell.date)}
+              >
+                <div className="text-[10px] font-medium flex justify-between">
+                  <span>
+                    {cell.date.toLocaleDateString(undefined, {
+                      weekday: "short",
+                      day: "numeric",
+                    })}
+                  </span>
+                  <button
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => onAdd(cell.date)}
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="space-y-0.5 mt-1">
+                  {cell.slots.map((slot) => (
+                    <SlotChip
+                      key={slot.id}
+                      slot={slot}
+                      onSelect={onSelect}
+                      onDragStart={onDragStart}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="space-y-0.5 mt-1">
-                {slots.map((slot) => (
-                  <SlotChip
-                    key={slot.id}
-                    slot={slot}
-                    onSelect={onSelect}
-                    onDragStart={onDragStart}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+            ) : (
+              <div key={`empty-${wi}-${ci}`} className="min-h-[120px]" />
+            ),
+          )}
         </div>
       ))}
     </div>
@@ -733,6 +758,7 @@ function SlotEditor({
   onDelete,
   onGenerate,
   onRegenerate,
+  regenerating,
   onAttached,
 }: {
   slot: PlanSlot;
@@ -740,6 +766,7 @@ function SlotEditor({
   onDelete: () => void;
   onGenerate: () => void;
   onRegenerate: () => void;
+  regenerating: boolean;
   onAttached: () => void;
 }) {
   const [when, setWhen] = useState(toLocalDateTimeInput(slot.scheduled_for));
@@ -757,11 +784,24 @@ function SlotEditor({
     setPostType(slot.post_type);
     setTopicHint(slot.topic_hint ?? "");
     setNotes(slot.notes ?? "");
+  }, [slot.id, slot.scheduled_for, slot.post_type, slot.topic_hint, slot.notes]);
+
+  useEffect(() => {
+    let cancelled = false;
     setLoadingSuggestions(true);
     suggestMediaForSlot(slot.id, 3)
-      .then(setSuggestions)
-      .catch(() => setSuggestions([]))
-      .finally(() => setLoadingSuggestions(false));
+      .then((rows) => {
+        if (!cancelled) setSuggestions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSuggestions(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [slot.id]);
 
   const handleAttach = async (assetId: number) => {
@@ -893,7 +933,7 @@ function SlotEditor({
           variant="outline"
           size="sm"
           onClick={onRegenerate}
-          disabled={busy}
+          disabled={busy || regenerating}
         >
           <Wand2 className="h-3 w-3" />
           Regenerate
