@@ -240,3 +240,64 @@ def test_upload_still_rejects_bad_mime(client, redirect_uploads):
         files={"file": ("x.txt", b"hi", "text/plain")},
     )
     assert r.status_code == 400
+
+
+def test_tus_create_head_patch_completes_video(client, redirect_uploads):
+    """TUS flow: create, head offset, patch chunks, complete creates MediaAsset."""
+    # Creation
+    r = client.post(
+        "/api/media/tus",
+        headers={
+            "Upload-Length": "100",
+            "Upload-Metadata": "filename dmlkZW8ubXA0,filetype dmlkZW8vbXA0",  # b64 video.mp4
+            "Tus-Resumable": "1.0.0",
+        },
+    )
+    assert r.status_code == 201, r.text
+    location = r.headers["location"]
+    assert "/tus/" in location
+    upload_id = location.rstrip("/").split("/")[-1]
+
+    # HEAD
+    r = client.head(f"/api/media/tus/{upload_id}")
+    assert r.status_code == 200
+    assert r.headers["upload-offset"] == "0"
+    assert r.headers["upload-length"] == "100"
+
+    # PATCH first chunk
+    chunk1 = b"a" * 40
+    r = client.patch(
+        f"/api/media/tus/{upload_id}",
+        headers={
+            "Upload-Offset": "0",
+            "Content-Type": "application/offset+octet-stream",
+            "Tus-Resumable": "1.0.0",
+        },
+        content=chunk1,
+    )
+    assert r.status_code == 204
+    assert r.headers["upload-offset"] == "40"
+
+    # PATCH rest
+    chunk2 = b"b" * 60
+    r = client.patch(
+        f"/api/media/tus/{upload_id}",
+        headers={
+            "Upload-Offset": "40",
+            "Content-Type": "application/offset+octet-stream",
+            "Tus-Resumable": "1.0.0",
+        },
+        content=chunk2,
+    )
+    assert r.status_code == 204
+    assert r.headers["upload-offset"] == "100"
+    assert r.headers.get("upload-complete") == "1"
+
+    # Asset created
+    r = client.get("/api/media")
+    assert r.status_code == 200
+    assets = r.json()
+    assert len(assets) >= 1
+    video = next(a for a in assets if a["kind"] == "video")
+    assert video["size_bytes"] == 100
+    assert video["mime"] == "video/mp4"

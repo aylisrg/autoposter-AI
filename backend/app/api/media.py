@@ -58,7 +58,8 @@ EXT_MAP = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
-MAX_BYTES = 10 * 1024 * 1024  # 10 MB for v1 — images only
+MAX_BYTES_IMAGE = 10 * 1024 * 1024  # 10 MB for images
+MAX_BYTES_VIDEO = 500 * 1024 * 1024  # 500 MB for videos
 
 
 def _read_dimensions(path: Path) -> tuple[int | None, int | None]:
@@ -80,7 +81,7 @@ async def upload(
         raise HTTPException(status_code=400, detail=f"Unsupported mime type: {mime}")
 
     data = await file.read()
-    if len(data) > MAX_BYTES:
+    if len(data) > MAX_BYTES_IMAGE:
         raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -243,3 +244,158 @@ def suggest_for_slot(
             )
         )
     return out
+
+
+# --- TUS resumable upload for videos (issue #20) ---
+
+from fastapi import Header, Request
+from fastapi.responses import Response
+
+# In-memory metadata for active TUS uploads (offset derived from file size)
+_tus_meta: dict[str, dict] = {}
+
+
+def _tus_path(upload_id: str) -> Path:
+    tus_dir = UPLOADS_DIR / "tus"
+    tus_dir.mkdir(parents=True, exist_ok=True)
+    return tus_dir / upload_id
+
+
+@router.post("/tus", status_code=201)
+async def tus_create(
+    request: Request,
+    upload_length: int = Header(..., alias="Upload-Length"),
+    upload_metadata: str | None = Header(None, alias="Upload-Metadata"),
+    db: Session = Depends(get_session),
+) -> Response:
+    """TUS creation: start a resumable upload (videos)."""
+    if upload_length > MAX_BYTES_VIDEO:
+        raise HTTPException(status_code=413, detail="File too large (max 500 MB)")
+    if upload_length <= 0:
+        raise HTTPException(status_code=400, detail="Invalid Upload-Length")
+
+    upload_id = uuid.uuid4().hex
+    path = _tus_path(upload_id)
+    path.touch()
+
+    # Parse metadata for filename/mime if present (base64 key value pairs)
+    mime = "video/mp4"
+    filename = f"{upload_id}.mp4"
+    if upload_metadata:
+        # Simple parse: "filename base64,filetype base64"
+        try:
+            parts = upload_metadata.split(",")
+            for p in parts:
+                if " " in p:
+                    key, val = p.strip().split(" ", 1)
+                    if key == "filetype":
+                        import base64
+                        mime = base64.b64decode(val).decode()
+                    if key == "filename":
+                        import base64
+                        filename = base64.b64decode(val).decode()
+        except Exception:
+            pass
+
+    _tus_meta[upload_id] = {
+        "length": upload_length,
+        "mime": mime,
+        "filename": filename,
+        "offset": 0,
+    }
+
+    location = str(request.url_for("tus_patch", upload_id=upload_id))
+    return Response(
+        status_code=201,
+        headers={
+            "Location": location,
+            "Tus-Resumable": "1.0.0",
+            "Upload-Offset": "0",
+        },
+    )
+
+
+@router.head("/tus/{upload_id}")
+async def tus_head(upload_id: str) -> Response:
+    """TUS HEAD: return current offset."""
+    meta = _tus_meta.get(upload_id)
+    path = _tus_path(upload_id)
+    if not meta or not path.exists():
+        raise HTTPException(status_code=404, detail="Upload not found")
+    offset = path.stat().st_size
+    return Response(
+        status_code=200,
+        headers={
+            "Upload-Offset": str(offset),
+            "Upload-Length": str(meta["length"]),
+            "Tus-Resumable": "1.0.0",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.patch("/tus/{upload_id}")
+async def tus_patch(
+    upload_id: str,
+    request: Request,
+    upload_offset: int = Header(..., alias="Upload-Offset"),
+    db: Session = Depends(get_session),
+) -> Response:
+    """TUS PATCH: append chunk at offset. Completes the asset when done."""
+    meta = _tus_meta.get(upload_id)
+    path = _tus_path(upload_id)
+    if not meta or not path.exists():
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    current = path.stat().st_size
+    if upload_offset != current:
+        raise HTTPException(status_code=409, detail="Offset mismatch")
+
+    body = await request.body()
+    if not body:
+        raise HTTPException(status_code=400, detail="Empty patch")
+
+    new_offset = current + len(body)
+    if new_offset > meta["length"]:
+        raise HTTPException(status_code=413, detail="Exceeds declared length")
+
+    with path.open("ab") as f:
+        f.write(body)
+
+    headers = {
+        "Upload-Offset": str(new_offset),
+        "Tus-Resumable": "1.0.0",
+    }
+
+    if new_offset == meta["length"]:
+        # Complete: move to final location and create MediaAsset
+        final_name = f"{uuid.uuid4().hex}_{meta['filename']}"
+        final_path = UPLOADS_DIR / final_name
+        path.rename(final_path)
+        del _tus_meta[upload_id]
+
+        asset = MediaAsset(
+            kind=MediaKind.VIDEO,
+            mime=meta["mime"],
+            local_path=f"images/uploads/{final_name}",
+            filename=final_name,
+            size_bytes=new_offset,
+            width=None,
+            height=None,
+            duration_sec=None,
+            ai_tags=[],
+            tags_user=[],
+            variants_json={},
+        )
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        headers["Upload-Complete"] = "1"
+        # Could return the asset id, but TUS typically just 204
+        return Response(status_code=204, headers=headers)
+
+    return Response(status_code=204, headers=headers)
+
+
+# Support simple full POST for photos already exists at /upload.
+# Videos are expected to use the TUS flow above.
