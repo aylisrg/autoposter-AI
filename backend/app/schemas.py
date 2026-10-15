@@ -687,11 +687,6 @@ class MetaManualCredentialIn(BaseModel):
 # ---------- Review Queue (M5) ----------
 
 
-class ReviewQueueStatusOut(str):
-    """Mirror of the enum for schema validation."""
-    pass
-
-
 class ReviewQueueItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

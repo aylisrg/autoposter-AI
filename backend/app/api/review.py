@@ -5,13 +5,13 @@ edits and bulk actions can be tracked independently of the Post lifecycle.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.db.models import Post, ReviewQueueItem, ReviewQueueStatus
+from app.db.models import Post, PostStatus, ReviewQueueItem, ReviewQueueStatus
 from app.schemas import (
     ReviewQueueBulkApproveRequest,
     ReviewQueueEditRequest,
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/api/review", tags=["review"])
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @router.get("", response_model=list[ReviewQueueItemOut])
@@ -38,7 +38,9 @@ def list_review_queue(
             st = ReviewQueueStatus(status_filter)
             q = q.filter(ReviewQueueItem.status == st)
         except ValueError:
-            raise HTTPException(status_code=400, detail=f"Unknown status {status_filter}")
+            raise HTTPException(
+                status_code=400, detail=f"Unknown status {status_filter}"
+            ) from None
     return (
         q.order_by(ReviewQueueItem.created_at.desc())
         .offset(offset)
@@ -59,8 +61,8 @@ def approve_item(item_id: int, db: Session = Depends(get_session)) -> ReviewQueu
     item.reviewer_action = {"action": "approve"}
     # Move the post out of pending_review if it is still there
     post = db.get(Post, item.post_id)
-    if post and post.status.value == "pending_review":
-        post.status = "draft"  # type: ignore[assignment]
+    if post and post.status == PostStatus.PENDING_REVIEW:
+        post.status = PostStatus.DRAFT
     db.commit()
     db.refresh(item)
     return item
@@ -91,8 +93,8 @@ def edit_item(
     item.status = ReviewQueueStatus.EDITED
     item.reviewed_at = _utcnow()
     item.reviewer_action = {"action": "edit", "changes": changes}
-    if post.status.value == "pending_review":
-        post.status = "draft"  # type: ignore[assignment]
+    if post.status == PostStatus.PENDING_REVIEW:
+        post.status = PostStatus.DRAFT
     db.commit()
     db.refresh(item)
     return item
@@ -109,8 +111,8 @@ def reject_item(item_id: int, db: Session = Depends(get_session)) -> ReviewQueue
     item.reviewed_at = _utcnow()
     item.reviewer_action = {"action": "reject"}
     post = db.get(Post, item.post_id)
-    if post and post.status.value == "pending_review":
-        post.status = "skipped"  # type: ignore[assignment]
+    if post and post.status == PostStatus.PENDING_REVIEW:
+        post.status = PostStatus.SKIPPED
     db.commit()
     db.refresh(item)
     return item
@@ -137,8 +139,8 @@ def bulk_approve(
         item.reviewed_at = now
         item.reviewer_action = {"action": "bulk_approve"}
         post = db.get(Post, item.post_id)
-        if post and post.status.value == "pending_review":
-            post.status = "draft"  # type: ignore[assignment]
+        if post and post.status == PostStatus.PENDING_REVIEW:
+            post.status = PostStatus.DRAFT
         approved.append(item)
     db.commit()
     for item in approved:

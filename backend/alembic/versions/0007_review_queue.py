@@ -23,7 +23,11 @@ def upgrade() -> None:
         "review_queue_items",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("post_id", sa.Integer(), nullable=False),
-        sa.Column("status", sa.Enum("pending", "approved", "edited", "rejected", name="reviewqueuestatus"), nullable=False),
+        sa.Column(
+            "status",
+            sa.Enum("PENDING", "APPROVED", "EDITED", "REJECTED", name="reviewqueuestatus"),
+            nullable=False,
+        ),
         sa.Column("reviewed_at", sa.DateTime(), nullable=True),
         sa.Column("reviewer_action", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=True),
