@@ -250,7 +250,16 @@ async def publish_due_posts() -> None:
 
             db.refresh(post)
             fresh_variants = list(post.variants)
-            if any(v.status == PostStatus.POSTED for v in fresh_variants):
+            still_pending = [
+                v
+                for v in fresh_variants
+                if v.status in (PostStatus.SCHEDULED, PostStatus.DRAFT)
+            ]
+            # A defer (hourly cap / group cooldown) must not seal the post as
+            # POSTED, or the remaining variants never get another tick.
+            if still_pending:
+                post.status = PostStatus.SCHEDULED
+            elif any(v.status == PostStatus.POSTED for v in fresh_variants):
                 post.status = PostStatus.POSTED
                 post.posted_at = datetime.now(UTC)
             elif all(
@@ -258,7 +267,7 @@ async def publish_due_posts() -> None:
             ) and not aborted_due_to_pause:
                 post.status = PostStatus.FAILED
             else:
-                post.status = PostStatus.SCHEDULED  # some variants still pending
+                post.status = PostStatus.SCHEDULED  # pause or mixed terminal states
             db.commit()
             if aborted_due_to_pause:
                 break

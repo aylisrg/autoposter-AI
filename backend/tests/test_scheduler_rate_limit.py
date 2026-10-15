@@ -89,3 +89,40 @@ def test_jitter_distribution(db):
     # Roughly uniform-ish: some small, some larger
     assert min(deltas) < 60
     assert max(deltas) > 5 * 60
+
+
+@pytest.mark.asyncio
+async def test_cooldown_defer_keeps_post_scheduled(db, session_maker, monkeypatch):
+    """If one variant posts and another is in cooldown, the post stays scheduled."""
+    from app.config import settings
+    from app.scheduler import jobs
+
+    now = datetime.now(UTC)
+    hot = _make_target(db, external_id="hot", name="Hot group")
+    cold = _make_target(db, external_id="cold", name="Cold group")
+    prior = _make_post(db)
+    _make_variant(db, prior, hot, posted_at=now - timedelta(minutes=5))
+
+    post = _make_post(db)
+    post.scheduled_for = now - timedelta(minutes=1)
+    db.commit()
+    hot_variant = _make_variant(db, post, hot, status=PostStatus.SCHEDULED, posted_at=None)
+    cold_variant = _make_variant(db, post, cold, status=PostStatus.SCHEDULED, posted_at=None)
+
+    monkeypatch.setattr(jobs, "SessionLocal", session_maker)
+    monkeypatch.setattr(settings, "min_delay_between_posts_sec", 0)
+    monkeypatch.setattr(settings, "max_delay_between_posts_sec", 0)
+    monkeypatch.setattr(settings, "min_group_cooldown_sec", 1800)
+
+    async def fake_publish(post, variant, target, humanizer_config=None, db=None):
+        variant.status = PostStatus.POSTED
+        variant.posted_at = datetime.now(UTC)
+
+    monkeypatch.setattr(jobs, "_publish_one", fake_publish)
+
+    await jobs.publish_due_posts()
+
+    db.expire_all()
+    assert db.get(PostVariant, hot_variant.id).status == PostStatus.SCHEDULED
+    assert db.get(PostVariant, cold_variant.id).status == PostStatus.POSTED
+    assert db.get(Post, post.id).status == PostStatus.SCHEDULED
