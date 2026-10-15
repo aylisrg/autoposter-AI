@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     min_delay_between_posts_sec: int = 120
     max_delay_between_posts_sec: int = 300
     max_posts_per_day: int = 50
+    # M4 — per-platform hourly cap and per-group cooldown
+    max_posts_per_hour_per_platform: int = 6
+    min_group_cooldown_sec: int = 1800  # 30 minutes between posts to the same group
 
     # M7 — Meta (Instagram + Threads) OAuth
     # Values come from the Facebook Developers console (Meta App). All

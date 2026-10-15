@@ -7,7 +7,10 @@ between variants in the range [min_delay_between_posts_sec, max_delay...]
 so that a large batch doesn't hit FB in the same second.
 
 Idempotency: posts are promoted to POSTING before dispatch so a second tick
-doesn't grab the same row. Per-day rate limiting uses `max_posts_per_day`.
+doesn't grab the same row. Rate limiting covers daily (`max_posts_per_day`),
+hourly per platform (`max_posts_per_hour_per_platform`) and a minimum cooldown
+between posts to the same group (`min_group_cooldown_sec`). Blackout dates and
+schedule jitter are also enforced.
 """
 from __future__ import annotations
 
@@ -24,6 +27,7 @@ from app.db import SessionLocal
 from app.db.models import Post, PostStatus, PostVariant, Target
 from app.platforms.registry import get_platform
 from app.services import humanizer as hz
+from app.scheduler import rate_limit as rl
 
 log = logging.getLogger("scheduler.jobs")
 
@@ -193,6 +197,34 @@ async def publish_due_posts() -> None:
                     db.commit()
                     continue
 
+                # Per-platform hourly rate limit
+                if not rl.can_post_to_platform(
+                    db,
+                    target.platform_id,
+                    settings.max_posts_per_hour_per_platform,
+                    now=now,
+                ):
+                    log.info(
+                        "Hourly rate limit for %s reached — deferring variant %s",
+                        target.platform_id,
+                        variant.id,
+                    )
+                    continue
+
+                # Minimum cooldown between posts to the same group/target
+                if not rl.group_cooldown_ok(
+                    db,
+                    target.id,
+                    settings.min_group_cooldown_sec,
+                    now=now,
+                ):
+                    log.info(
+                        "Group cooldown active for target %s — deferring variant %s",
+                        target.id,
+                        variant.id,
+                    )
+                    continue
+
                 await _publish_one(
                     post, variant, target, humanizer_config=humanizer_config, db=db
                 )
@@ -218,7 +250,16 @@ async def publish_due_posts() -> None:
 
             db.refresh(post)
             fresh_variants = list(post.variants)
-            if any(v.status == PostStatus.POSTED for v in fresh_variants):
+            still_pending = [
+                v
+                for v in fresh_variants
+                if v.status in (PostStatus.SCHEDULED, PostStatus.DRAFT)
+            ]
+            # A defer (hourly cap / group cooldown) must not seal the post as
+            # POSTED, or the remaining variants never get another tick.
+            if still_pending:
+                post.status = PostStatus.SCHEDULED
+            elif any(v.status == PostStatus.POSTED for v in fresh_variants):
                 post.status = PostStatus.POSTED
                 post.posted_at = datetime.now(UTC)
             elif all(
@@ -226,7 +267,7 @@ async def publish_due_posts() -> None:
             ) and not aborted_due_to_pause:
                 post.status = PostStatus.FAILED
             else:
-                post.status = PostStatus.SCHEDULED  # some variants still pending
+                post.status = PostStatus.SCHEDULED  # pause or mixed terminal states
             db.commit()
             if aborted_due_to_pause:
                 break
