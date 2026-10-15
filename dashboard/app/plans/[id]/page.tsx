@@ -113,6 +113,7 @@ export default function PlanDetailPage({
   const [chatBusy, setChatBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [addingAt, setAddingAt] = useState<Date | null>(null);
+  const [viewMode, setViewMode] = useState<"month" | "week" | "list">("month");
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const refresh = async () => {
@@ -215,6 +216,30 @@ export default function PlanDetailPage({
     }
   };
 
+  const handleRegenerateSlot = async (slot: PlanSlot) => {
+    if (!plan) return;
+    setError(null);
+    setChatBusy(true);
+    const when = new Date(slot.scheduled_for).toLocaleString();
+    const msg = `Regenerate a fresh post_type and topic_hint for the single slot scheduled around ${when}. Keep the same date and approximate time. Return the updated plan.`;
+    try {
+      const res = await chatPlan(plan.id, msg);
+      setPlan(res.plan);
+      const updated = res.plan.slots.find((s) => s.id === slot.id);
+      if (updated) setSelectedSlot(updated);
+    } catch (e) {
+      setError(
+        e instanceof ApiError
+          ? `${e.status}: ${e.message}`
+          : e instanceof Error
+            ? e.message
+            : "Regenerate failed",
+      );
+    } finally {
+      setChatBusy(false);
+    }
+  };
+
   const handleDragStart = (e: React.DragEvent, slotId: number) => {
     e.dataTransfer.setData("slot-id", String(slotId));
   };
@@ -280,80 +305,79 @@ export default function PlanDetailPage({
 
         <ColorLegend />
 
+        <div className="mb-4 flex gap-2">
+          <Button
+            variant={viewMode === "month" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewMode("month")}
+          >
+            Month
+          </Button>
+          <Button
+            variant={viewMode === "week" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewMode("week")}
+          >
+            Week
+          </Button>
+          <Button
+            variant={viewMode === "list" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setViewMode("list")}
+          >
+            List
+          </Button>
+        </div>
+
         {error && (
           <div className="mb-4 rounded-md bg-destructive/10 text-destructive text-sm p-3">
             {error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {days.map(({ date, slots }) => (
-            <Card
-              key={date.toISOString()}
-              className="min-h-[140px]"
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => handleDrop(e, date)}
-            >
-              <CardHeader className="p-3 pb-1 flex flex-row items-center justify-between">
-                <div className="text-sm font-medium">
-                  {date.toLocaleDateString(undefined, {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={() => {
-                    const at = new Date(date);
-                    at.setHours(10, 0, 0, 0);
-                    setAddingAt(at);
-                  }}
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </CardHeader>
-              <CardContent className="p-3 pt-1 space-y-1">
-                {slots.length === 0 && (
-                  <div className="text-xs text-muted-foreground italic">
-                    Nothing planned. Drag a slot or tap + to add.
-                  </div>
-                )}
-                {slots.map((slot) => (
-                  <button
-                    key={slot.id}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, slot.id)}
-                    onClick={() => setSelectedSlot(slot)}
-                    className={`w-full text-left text-xs rounded border px-2 py-1.5 cursor-grab hover:shadow-sm transition ${TYPE_COLORS[slot.post_type]}`}
-                  >
-                    <div className="font-medium">
-                      {new Date(slot.scheduled_for).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                      {" · "}
-                      {POST_TYPES.find((t) => t.value === slot.post_type)
-                        ?.label ?? slot.post_type}
-                    </div>
-                    {slot.topic_hint && (
-                      <div className="text-[11px] opacity-80 line-clamp-2 mt-0.5">
-                        {slot.topic_hint}
-                      </div>
-                    )}
-                    {slot.status !== "planned" && (
-                      <Badge variant="secondary" className="mt-1 text-[10px]">
-                        {SLOT_STATUS_LABEL[slot.status] ?? slot.status}
-                      </Badge>
-                    )}
-                  </button>
-                ))}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {viewMode === "list" ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {days.map(({ date, slots }) => (
+              <DayCard
+                key={date.toISOString()}
+                date={date}
+                slots={slots}
+                onDrop={handleDrop}
+                onAdd={() => {
+                  const at = new Date(date);
+                  at.setHours(10, 0, 0, 0);
+                  setAddingAt(at);
+                }}
+                onSelect={setSelectedSlot}
+                onDragStart={handleDragStart}
+              />
+            ))}
+          </div>
+        ) : viewMode === "week" ? (
+          <WeekView
+            days={days}
+            onDrop={handleDrop}
+            onAdd={(d) => {
+              const at = new Date(d);
+              at.setHours(10, 0, 0, 0);
+              setAddingAt(at);
+            }}
+            onSelect={setSelectedSlot}
+            onDragStart={handleDragStart}
+          />
+        ) : (
+          <MonthView
+            days={days}
+            onDrop={handleDrop}
+            onAdd={(d) => {
+              const at = new Date(d);
+              at.setHours(10, 0, 0, 0);
+              setAddingAt(at);
+            }}
+            onSelect={setSelectedSlot}
+            onDragStart={handleDragStart}
+          />
+        )}
       </div>
 
       {/* Right: inspector + chat */}
@@ -375,6 +399,7 @@ export default function PlanDetailPage({
               onPatch={(p) => handleSlotPatch(selectedSlot.id, p)}
               onDelete={() => handleSlotDelete(selectedSlot.id)}
               onGenerate={() => handleGeneratePost(selectedSlot.id)}
+              onRegenerate={() => handleRegenerateSlot(selectedSlot)}
               onAttached={() => refresh()}
             />
           ) : (
@@ -464,17 +489,257 @@ function ColorLegend() {
   );
 }
 
+
+function DayCard({
+  date,
+  slots,
+  onDrop,
+  onAdd,
+  onSelect,
+  onDragStart,
+}: {
+  date: Date;
+  slots: PlanSlot[];
+  onDrop: (e: React.DragEvent, day: Date) => void;
+  onAdd: () => void;
+  onSelect: (s: PlanSlot) => void;
+  onDragStart: (e: React.DragEvent, id: number) => void;
+}) {
+  return (
+    <Card
+      className="min-h-[140px]"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => onDrop(e, date)}
+    >
+      <CardHeader className="p-3 pb-1 flex flex-row items-center justify-between">
+        <div className="text-sm font-medium">
+          {date.toLocaleDateString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          })}
+        </div>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onAdd}>
+          <Plus className="h-3 w-3" />
+        </Button>
+      </CardHeader>
+      <CardContent className="p-3 pt-1 space-y-1">
+        {slots.length === 0 && (
+          <div className="text-xs text-muted-foreground italic">
+            Nothing planned. Drag a slot or tap + to add.
+          </div>
+        )}
+        {slots.map((slot) => (
+          <SlotChip
+            key={slot.id}
+            slot={slot}
+            onSelect={onSelect}
+            onDragStart={onDragStart}
+          />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SlotChip({
+  slot,
+  onSelect,
+  onDragStart,
+}: {
+  slot: PlanSlot;
+  onSelect: (s: PlanSlot) => void;
+  onDragStart: (e: React.DragEvent, id: number) => void;
+}) {
+  return (
+    <button
+      draggable
+      onDragStart={(e) => onDragStart(e, slot.id)}
+      onClick={() => onSelect(slot)}
+      className={`w-full text-left text-xs rounded border px-2 py-1.5 cursor-grab hover:shadow-sm transition ${TYPE_COLORS[slot.post_type]}`}
+    >
+      <div className="font-medium">
+        {new Date(slot.scheduled_for).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}
+        {" · "}
+        {POST_TYPES.find((t) => t.value === slot.post_type)?.label ?? slot.post_type}
+      </div>
+      {slot.topic_hint && (
+        <div className="text-[11px] opacity-80 line-clamp-2 mt-0.5">
+          {slot.topic_hint}
+        </div>
+      )}
+      {slot.status !== "planned" && (
+        <Badge variant="secondary" className="mt-1 text-[10px]">
+          {SLOT_STATUS_LABEL[slot.status] ?? slot.status}
+        </Badge>
+      )}
+    </button>
+  );
+}
+
+function WeekView({
+  days,
+  onDrop,
+  onAdd,
+  onSelect,
+  onDragStart,
+}: {
+  days: { date: Date; slots: PlanSlot[] }[];
+  onDrop: (e: React.DragEvent, day: Date) => void;
+  onAdd: (d: Date) => void;
+  onSelect: (s: PlanSlot) => void;
+  onDragStart: (e: React.DragEvent, id: number) => void;
+}) {
+  // Show first 7 days or group into weeks; for simplicity take consecutive days as weeks
+  const weeks: typeof days[] = [];
+  for (let i = 0; i < days.length; i += 7) {
+    weeks.push(days.slice(i, i + 7));
+  }
+  return (
+    <div className="space-y-6">
+      {weeks.map((week, wi) => (
+        <div key={wi} className="grid grid-cols-7 gap-1">
+          {week.map(({ date, slots }) => (
+            <div
+              key={date.toISOString()}
+              className="border rounded min-h-[120px] p-1 bg-card"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => onDrop(e, date)}
+            >
+              <div className="text-[10px] font-medium flex justify-between">
+                <span>
+                  {date.toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}
+                </span>
+                <button
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => onAdd(date)}
+                >
+                  +
+                </button>
+              </div>
+              <div className="space-y-0.5 mt-1">
+                {slots.map((slot) => (
+                  <SlotChip
+                    key={slot.id}
+                    slot={slot}
+                    onSelect={onSelect}
+                    onDragStart={onDragStart}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MonthView({
+  days,
+  onDrop,
+  onAdd,
+  onSelect,
+  onDragStart,
+}: {
+  days: { date: Date; slots: PlanSlot[] }[];
+  onDrop: (e: React.DragEvent, day: Date) => void;
+  onAdd: (d: Date) => void;
+  onSelect: (s: PlanSlot) => void;
+  onDragStart: (e: React.DragEvent, id: number) => void;
+}) {
+  if (days.length === 0) return null;
+  const first = days[0].date;
+  const startPad = first.getDay(); // 0 Sun
+  const padded: ({ date: Date; slots: PlanSlot[] } | null)[] = [
+    ...Array(startPad).fill(null),
+    ...days,
+  ];
+  while (padded.length % 7 !== 0) padded.push(null);
+  const weeks: typeof padded[] = [];
+  for (let i = 0; i < padded.length; i += 7) {
+    weeks.push(padded.slice(i, i + 7));
+  }
+  const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  return (
+    <div>
+      <div className="grid grid-cols-7 gap-1 mb-1 text-xs text-muted-foreground">
+        {weekdays.map((w) => (
+          <div key={w} className="text-center font-medium">
+            {w}
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1">
+        {weeks.map((week, wi) => (
+          <div key={wi} className="grid grid-cols-7 gap-1">
+            {week.map((cell, ci) =>
+              cell ? (
+                <div
+                  key={cell.date.toISOString()}
+                  className="border rounded min-h-[100px] p-1 bg-card text-xs"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => onDrop(e, cell.date)}
+                >
+                  <div className="flex justify-between font-medium">
+                    <span>{cell.date.getDate()}</span>
+                    <button
+                      className="text-muted-foreground hover:text-foreground text-[10px]"
+                      onClick={() => onAdd(cell.date)}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <div className="space-y-0.5 mt-1">
+                    {cell.slots.slice(0, 3).map((slot) => (
+                      <div
+                        key={slot.id}
+                        draggable
+                        onDragStart={(e) => onDragStart(e, slot.id)}
+                        onClick={() => onSelect(slot)}
+                        className={`truncate rounded px-1 py-0.5 cursor-grab text-[10px] ${TYPE_COLORS[slot.post_type]}`}
+                      >
+                        {new Date(slot.scheduled_for).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        {POST_TYPES.find((t) => t.value === slot.post_type)?.label ?? slot.post_type}
+                      </div>
+                    ))}
+                    {cell.slots.length > 3 && (
+                      <div className="text-[10px] text-muted-foreground">
+                        +{cell.slots.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div key={`empty-${wi}-${ci}`} className="min-h-[100px]" />
+              ),
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SlotEditor({
   slot,
   onPatch,
   onDelete,
   onGenerate,
+  onRegenerate,
   onAttached,
 }: {
   slot: PlanSlot;
   onPatch: (p: Parameters<typeof patchSlot>[1]) => void;
   onDelete: () => void;
   onGenerate: () => void;
+  onRegenerate: () => void;
   onAttached: () => void;
 }) {
   const [when, setWhen] = useState(toLocalDateTimeInput(slot.scheduled_for));
@@ -623,6 +888,15 @@ function SlotEditor({
         >
           <Sparkles className="h-3 w-3" />
           {slot.post_id ? "Drafted" : "Draft with AI"}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRegenerate}
+          disabled={busy}
+        >
+          <Wand2 className="h-3 w-3" />
+          Regenerate
         </Button>
         <Button
           onClick={onDelete}
