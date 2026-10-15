@@ -1,11 +1,12 @@
 """Media library endpoints.
 
-POST   /api/media/upload                  — upload image, store on disk + DB
+POST   /api/media/upload                  — upload image/video, store on disk + DB
 GET    /api/media                         — list assets
 GET    /api/media/{id}                    — detail
 PATCH  /api/media/{id}                    — edit user tags
 DELETE /api/media/{id}
 POST   /api/media/{id}/tag                — (re)run Claude Vision tagging
+POST   /api/media/{id}/transcode          — generate IG/Threads video variants (#22)
 POST   /api/media/{id}/attach-to-slot/{slot_id}
                                           — link asset to a PlanSlot
 GET    /api/media/suggest-for-slot/{slot_id}?limit=3
@@ -32,6 +33,7 @@ from sqlalchemy.orm import Session
 from app.ai.vision import media_relevance_score, tag_image
 from app.db import get_session
 from app.db.models import MediaAsset, MediaKind, PlanSlot
+from app.media.transcode import TranscodeError, probe, transcode_all
 from app.schemas import (
     MediaAssetOut,
     MediaAssetPatch,
@@ -45,20 +47,34 @@ router = APIRouter(prefix="/api/media", tags=["media"])
 
 UPLOADS_DIR = Path("data/images/uploads")
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+VIDEO_UPLOADS_DIR = Path("data/media/uploads")
+VIDEO_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-ALLOWED_MIME = {
+ALLOWED_IMAGE_MIME = {
     "image/jpeg",
     "image/png",
     "image/webp",
     "image/gif",
 }
+ALLOWED_VIDEO_MIME = {
+    "video/mp4",
+    "video/quicktime",
+    "video/webm",
+    "video/x-msvideo",
+}
+ALLOWED_MIME = ALLOWED_IMAGE_MIME | ALLOWED_VIDEO_MIME
 EXT_MAP = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
     "image/gif": ".gif",
+    "video/mp4": ".mp4",
+    "video/quicktime": ".mov",
+    "video/webm": ".webm",
+    "video/x-msvideo": ".avi",
 }
-MAX_BYTES = 10 * 1024 * 1024  # 10 MB for v1 — images only
+MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
+MAX_VIDEO_BYTES = 200 * 1024 * 1024  # 200 MB for v1
 
 
 def _read_dimensions(path: Path) -> tuple[int | None, int | None]:
@@ -80,25 +96,51 @@ async def upload(
         raise HTTPException(status_code=400, detail=f"Unsupported mime type: {mime}")
 
     data = await file.read()
-    if len(data) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 10 MB)")
+    is_video = mime in ALLOWED_VIDEO_MIME
+    max_bytes = MAX_VIDEO_BYTES if is_video else MAX_IMAGE_BYTES
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {max_bytes // (1024 * 1024)} MB)",
+        )
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
 
     ext = EXT_MAP[mime]
     filename = f"{uuid.uuid4().hex}{ext}"
-    out_path = UPLOADS_DIR / filename
+    if is_video:
+        out_dir = VIDEO_UPLOADS_DIR
+        local_prefix = "media/uploads"
+        kind = MediaKind.VIDEO
+    else:
+        out_dir = UPLOADS_DIR
+        local_prefix = "images/uploads"
+        kind = MediaKind.IMAGE
+    out_path = out_dir / filename
     out_path.write_bytes(data)
-    width, height = _read_dimensions(out_path)
+
+    width: int | None = None
+    height: int | None = None
+    duration_sec: float | None = None
+    if is_video:
+        try:
+            info = probe(out_path)
+            width, height = info.width, info.height
+            duration_sec = info.duration
+        except TranscodeError as exc:
+            log.warning("ffprobe failed on upload %s: %s", out_path, exc)
+    else:
+        width, height = _read_dimensions(out_path)
 
     asset = MediaAsset(
-        kind=MediaKind.IMAGE,
+        kind=kind,
         mime=mime,
-        local_path=f"images/uploads/{filename}",
+        local_path=f"{local_prefix}/{filename}",
         filename=filename,
         size_bytes=len(data),
         width=width,
         height=height,
+        duration_sec=duration_sec,
         ai_caption=None,
         ai_tags=[],
         tags_user=[],
@@ -168,6 +210,14 @@ def delete_media(asset_id: int, db: Session = Depends(get_session)) -> None:
             full_path.unlink()
     except Exception as exc:  # noqa: BLE001
         log.warning("Could not remove %s: %s", full_path, exc)
+    # Also remove known variants
+    for rel in (asset.variants_json or {}).values():
+        try:
+            vpath = Path("data") / str(rel)
+            if vpath.exists():
+                vpath.unlink()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Could not remove variant %s: %s", rel, exc)
     db.delete(asset)
     db.commit()
 
@@ -188,6 +238,48 @@ def run_tagging(asset_id: int, db: Session = Depends(get_session)) -> MediaTagRe
     db.commit()
     db.refresh(asset)
     return MediaTagResult(caption=result.caption, tags=result.tags, cost_usd=result.cost_usd)
+
+
+@router.post("/{asset_id}/transcode", response_model=MediaAssetOut)
+def run_transcode(
+    asset_id: int,
+    db: Session = Depends(get_session),
+) -> MediaAsset:
+    """Generate IG/Threads aspect variants for a video MediaAsset (#22)."""
+    asset = db.get(MediaAsset, asset_id)
+    if asset is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    if asset.kind != MediaKind.VIDEO:
+        raise HTTPException(
+            status_code=400,
+            detail="Transcode only applies to video assets",
+        )
+    full_path = Path("data") / asset.local_path
+    if not full_path.exists():
+        raise HTTPException(status_code=410, detail="Underlying file missing")
+
+    try:
+        variants = transcode_all(full_path)
+    except TranscodeError as exc:
+        log.exception("transcode failed for asset %s", asset_id)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    # Merge with any existing variants (idempotent re-run replaces keys)
+    existing = dict(asset.variants_json or {})
+    existing.update(variants)
+    asset.variants_json = existing
+    # Refresh dimensions from source if still missing
+    if asset.width is None or asset.height is None:
+        try:
+            info = probe(full_path)
+            asset.width = info.width
+            asset.height = info.height
+            asset.duration_sec = info.duration
+        except TranscodeError:
+            pass
+    db.commit()
+    db.refresh(asset)
+    return asset
 
 
 @router.post(
