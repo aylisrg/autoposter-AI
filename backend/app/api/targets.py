@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -165,6 +166,7 @@ def _upsert_fb_targets(
                     if source == "scraped_joined"
                     else TargetReviewStatus.PENDING
                 ),
+                discovered_at=datetime.now(timezone.utc),
             )
             db.add(target)
             rows.append(target)

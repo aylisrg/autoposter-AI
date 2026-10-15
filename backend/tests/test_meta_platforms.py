@@ -352,3 +352,54 @@ async def test_instagram_list_targets_returns_credential_account(db):
 async def test_threads_list_targets_empty_without_credential(db):
     out = await ThreadsPlatform(db=db).list_targets()
     assert out == []
+
+
+
+@pytest.mark.asyncio
+async def test_instagram_list_targets_uses_graph_api(db):
+    """list_targets calls Graph /me/accounts and returns IG business accounts."""
+    cred = PlatformCredential(
+        platform_id="instagram",
+        account_id="fallback-ig",
+        username="testuser",
+        access_token="tok",
+    )
+    db.add(cred)
+    db.commit()
+
+    pages = [
+        {
+            "id": "page1",
+            "name": "Page One",
+            "instagram_business_account": {"id": "ig-123"},
+        },
+        {"id": "page2", "name": "Page Two"},  # no IG — skipped
+    ]
+    with patch("app.platforms.meta_graph.list_pages", return_value=pages):
+        ig = InstagramPlatform(db=db)
+        targets = await ig.list_targets()
+
+    assert len(targets) == 1
+    assert targets[0]["external_id"] == "ig-123"
+    assert targets[0]["name"] == "Page One"
+    assert targets[0]["meta"]["source"] == "meta_graph"
+
+
+@pytest.mark.asyncio
+async def test_instagram_list_targets_falls_back_on_api_error(db):
+    cred = PlatformCredential(
+        platform_id="instagram",
+        account_id="fallback-ig",
+        username="testuser",
+        access_token="tok",
+    )
+    db.add(cred)
+    db.commit()
+
+    with patch("app.platforms.meta_graph.list_pages", side_effect=Exception("boom")):
+        ig = InstagramPlatform(db=db)
+        targets = await ig.list_targets()
+
+    assert len(targets) == 1
+    assert targets[0]["external_id"] == "fallback-ig"
+    assert targets[0]["meta"]["source"] == "meta_oauth"

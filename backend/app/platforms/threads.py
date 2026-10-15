@@ -74,19 +74,54 @@ class ThreadsPlatform(Platform):
     # ------- Targets -------
 
     async def list_targets(self, db: Session | None = None) -> list[dict]:
+        """List manageable Threads accounts via Graph API /me/accounts.
+
+        Threads accounts are often linked through the same pages. We look for
+        any page that exposes a Threads user id (or fall back to credential).
+        """
         session = db or self._db
         if session is None:
             return []
         cred = _get_credential(session)
         if cred is None:
             return []
-        return [
-            {
-                "external_id": cred.account_id,
-                "name": cred.username or f"Threads ({cred.account_id})",
-                "meta": {"source": "meta_oauth"},
-            }
-        ]
+
+        targets: list[dict] = []
+        try:
+            pages = meta_graph.list_pages(cred.access_token)
+            for page in pages:
+                # Threads user id may appear under different keys depending on API version;
+                # also accept the page itself as a proxy when no dedicated field is present.
+                threads_id = (
+                    page.get("threads_user_id")
+                    or (page.get("instagram_business_account") or {}).get("id")
+                    or page.get("id")
+                )
+                if not threads_id:
+                    continue
+                targets.append(
+                    {
+                        "external_id": str(threads_id),
+                        "name": page.get("name") or f"Threads ({threads_id})",
+                        "meta": {
+                            "source": "meta_graph",
+                            "page_id": page.get("id"),
+                            "page_name": page.get("name"),
+                        },
+                    }
+                )
+        except Exception as exc:
+            log.warning("Failed to list Threads accounts via Graph API: %s", exc)
+
+        if not targets and cred.account_id:
+            targets.append(
+                {
+                    "external_id": cred.account_id,
+                    "name": cred.username or f"Threads ({cred.account_id})",
+                    "meta": {"source": "meta_oauth"},
+                }
+            )
+        return targets
 
     # ------- Publishing -------
 
