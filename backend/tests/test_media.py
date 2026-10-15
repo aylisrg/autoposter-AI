@@ -301,3 +301,42 @@ def test_tus_create_head_patch_completes_video(client, redirect_uploads):
     video = next(a for a in assets if a["kind"] == "video")
     assert video["size_bytes"] == 100
     assert video["mime"] == "video/mp4"
+
+
+def test_upload_triggers_background_tagging_and_embedding(client, redirect_uploads, monkeypatch):
+    """Issue #21: upload enqueues background AI tagging + local embedding."""
+    from app.ai.vision import TagResult
+    from app.media import tagging as tagging_mod
+
+    def fake_tag(path, mime=None):
+        return TagResult(
+            caption="A close-up of basil leaves on a wooden table.",
+            tags=["basil", "herbs", "kitchen", "wooden-table", "green", "fresh", "food", "morning"],
+            cost_usd=0.002,
+        )
+
+    monkeypatch.setattr("app.media.tagging.tag_image", fake_tag, raising=True)
+
+    resp = client.post(
+        "/api/media/upload",
+        files={"file": ("pic.png", PNG_BYTES, "image/png")},
+    )
+    assert resp.status_code == 200, resp.text
+    asset_id = resp.json()["id"]
+
+    # TestClient runs background tasks before returning.
+    from app.db.models import MediaAsset
+    from app.db.session import SessionLocal
+
+    db = SessionLocal()
+    try:
+        asset = db.get(MediaAsset, asset_id)
+        assert asset is not None
+        assert asset.ai_caption is not None
+        assert "basil" in (asset.ai_tags or [])
+        assert len(asset.ai_tags) >= 5
+        assert asset.embedding is not None
+        assert len(asset.embedding) == tagging_mod.EMBEDDING_DIM
+        assert asset.tagged_at is not None
+    finally:
+        db.close()

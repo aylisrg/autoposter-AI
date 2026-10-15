@@ -22,6 +22,7 @@ from pathlib import Path
 from anthropic import Anthropic
 
 from app.config import settings
+from app.ai.prompts.media import MEDIA_TAGGING_SYSTEM
 
 log = logging.getLogger("ai.vision")
 
@@ -36,18 +37,7 @@ _MIME_BY_EXT = {
     ".gif": "image/gif",
 }
 
-SYSTEM_PROMPT = """You tag images for a business's social media library. You're \
-shown one image and you return JSON with a short factual caption and 3-8 tags.
-
-Rules:
-- The caption is one sentence, ≤20 words, present tense, concrete. \
-  No opinions, no marketing adjectives.
-- Tags are lowercase, 1-2 words each, no hashtags, no punctuation.
-- Tags should be searchable ("basil", "windowsill", "morning-light", \
-"woman-cooking"), not vague ("beautiful", "nice", "cool").
-
-Return ONLY JSON of the form:
-{"caption": "...", "tags": ["...", "..."]}"""
+SYSTEM_PROMPT = MEDIA_TAGGING_SYSTEM
 
 
 @dataclass

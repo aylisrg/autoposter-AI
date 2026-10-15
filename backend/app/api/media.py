@@ -20,6 +20,7 @@ from pathlib import Path
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     HTTPException,
@@ -30,6 +31,7 @@ from PIL import Image as PILImage
 from sqlalchemy.orm import Session
 
 from app.ai.vision import media_relevance_score, tag_image
+from app.media.tagging import tag_and_embed_asset
 from app.db import get_session
 from app.db.models import MediaAsset, MediaKind, PlanSlot
 from app.schemas import (
@@ -73,6 +75,7 @@ def _read_dimensions(path: Path) -> tuple[int | None, int | None]:
 
 @router.post("/upload", response_model=MediaUploadOut)
 async def upload(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_session),
 ) -> MediaUploadOut:
@@ -108,6 +111,9 @@ async def upload(
     db.add(asset)
     db.commit()
     db.refresh(asset)
+
+    # Async AI tagging + embedding (Claude Vision + local embed)
+    background_tasks.add_task(tag_and_embed_asset, asset.id)
 
     return MediaUploadOut(
         id=asset.id,
@@ -185,6 +191,9 @@ def run_tagging(asset_id: int, db: Session = Depends(get_session)) -> MediaTagRe
     result = tag_image(full_path, mime=asset.mime)
     asset.ai_caption = result.caption
     asset.ai_tags = result.tags
+    from app.media.tagging import compute_local_embedding
+    text_for_embed = f"{result.caption} {' '.join(result.tags)}"
+    asset.embedding = compute_local_embedding(text_for_embed)
     asset.tagged_at = datetime.now(UTC)
     db.commit()
     db.refresh(asset)
