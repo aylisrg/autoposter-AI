@@ -35,6 +35,18 @@ Groups + Profile, расширяемся на LinkedIn / X / Threads / Bluesky /
                             └──────────────────────────┘
 ```
 
+Подробнее: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Документация
+
+| Doc | Содержание |
+|-----|------------|
+| [docs/INSTALL.md](docs/INSTALL.md) | Docker и установка из исходников |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Extension, OAuth, scheduler |
+| [docs/BAN_FAQ.md](docs/BAN_FAQ.md) | Humanizer, checkpoint, прогрев аккаунта |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Диаграмма, агенты, data flow |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Вехи M0–M8 |
+
 ## Архитектура AI-слоя
 
 9 типов постов (informative, soft-sell, hard-sell, engagement, story, motivational,
@@ -67,6 +79,8 @@ class Platform(ABC):
 
 ## Setup
 
+Кратко ниже; полный путь — [docs/INSTALL.md](docs/INSTALL.md).
+
 ### Требования
 - Python 3.11+
 - Node.js 20+
@@ -95,6 +109,8 @@ npm install
 npm run build
 # загрузить dist/ как unpacked extension в chrome://extensions (Developer mode ON)
 ```
+
+Или `docker compose up -d --build` для backend (см. INSTALL).
 
 ## Roadmap
 
@@ -154,6 +170,8 @@ npm run build
 личного использования с разумными задержками риск бана низкий, но не нулевой.
 **Не использовать с основным/ценным аккаунтом.** Для продакшена — обязательно
 заметная предупреждалка в UI и ToS.
+
+См. также [docs/BAN_FAQ.md](docs/BAN_FAQ.md).
 
 ## Лицензия
 
