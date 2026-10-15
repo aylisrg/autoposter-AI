@@ -227,6 +227,68 @@ def test_thumbs_feedback_on_pending_post(client, fake_generate_post):
     assert r.status_code == 201
 
 
+def test_auto_approve_suggestions_after_threshold(client, fake_generate_post, monkeypatch):
+    """Last N clean approvals of a type suggest auto-approve; pending posts do not."""
+    monkeypatch.setattr("app.config.settings.auto_approve_threshold", 2)
+
+    _put_profile(client, review_before_posting=True, auto_approve_types=[])
+
+    # Generate and approve 2 informative posts
+    for _ in range(2):
+        post = _generate(client, post_type="informative")
+        r = client.post(f"/api/posts/{post['id']}/approve", json={})
+        assert r.status_code == 200
+
+    # One hard_sell still pending — should not suggest
+    _generate(client, post_type="hard_sell")
+
+    r = client.get("/api/business-profile/suggestions")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "informative" in data["suggested_types"]
+    assert "hard_sell" not in data["suggested_types"]
+    assert data["threshold"] == 2
+
+
+def test_auto_approve_suggestions_ignore_skips_and_edits(client, fake_generate_post, monkeypatch):
+    """Rejects and review edits must not count as the N clean approvals (#35)."""
+    monkeypatch.setattr("app.config.settings.auto_approve_threshold", 2)
+    _put_profile(client, review_before_posting=True, auto_approve_types=[])
+
+    for _ in range(2):
+        post = _generate(client, post_type="informative")
+        r = client.post(f"/api/posts/{post['id']}/reject", json={})
+        assert r.status_code == 200, r.text
+
+    r = client.get("/api/business-profile/suggestions")
+    assert "informative" not in r.json()["suggested_types"]
+
+    for _ in range(2):
+        post = _generate(client, post_type="hard_sell")
+        pending = client.get("/api/review?status_filter=pending").json()
+        item = next(i for i in pending if i["post_id"] == post["id"])
+        r = client.post(
+            f"/api/review/{item['id']}/edit",
+            json={"text": "rewritten before approving"},
+        )
+        assert r.status_code == 200, r.text
+
+    r = client.get("/api/business-profile/suggestions")
+    assert "hard_sell" not in r.json()["suggested_types"]
+
+    for _ in range(2):
+        post = _generate(client, post_type="engagement")
+        pending = client.get("/api/review?status_filter=pending").json()
+        item = next(i for i in pending if i["post_id"] == post["id"])
+        r = client.post(f"/api/review/{item['id']}/approve")
+        assert r.status_code == 200, r.text
+
+    data = client.get("/api/business-profile/suggestions").json()
+    assert "engagement" in data["suggested_types"]
+    assert "informative" not in data["suggested_types"]
+    assert "hard_sell" not in data["suggested_types"]
+
+
 def test_review_queue_auto_add_and_endpoints(client, fake_generate_post):
     """ReviewQueueItem is created on generate when review is enabled,
     and the dedicated /api/review endpoints work.
