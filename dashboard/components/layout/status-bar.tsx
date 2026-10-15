@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getStatus, type StatusOut } from "@/lib/api";
+import { getStatus, getPauseStatus, resumeFromPause, type StatusOut, type SmartPauseInfo } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 export function StatusBar() {
   const [status, setStatus] = useState<StatusOut | null>(null);
+  const [pause, setPause] = useState<SmartPauseInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -14,8 +15,10 @@ export function StatusBar() {
     const tick = async () => {
       try {
         const s = await getStatus();
+        const p = await getPauseStatus().catch(() => null);
         if (!cancelled) {
           setStatus(s);
+          setPause(p);
           setError(null);
         }
       } catch (e) {
@@ -68,6 +71,20 @@ export function StatusBar() {
       <Badge variant={status.scheduler_running ? "success" : "warning"}>
         Scheduler: {status.scheduler_running ? "running" : "stopped"}
       </Badge>
+      {pause?.paused && (
+        <>
+          <Badge variant="warning">Session needs attention</Badge>
+          <button
+            onClick={async () => {
+              const next = await resumeFromPause();
+              setPause(next);
+            }}
+            className="text-xs underline text-primary hover:no-underline"
+          >
+            Resolve
+          </button>
+        </>
+      )}
       <span className="text-muted-foreground ml-auto">
         Pending: {status.pending_posts}
       </span>

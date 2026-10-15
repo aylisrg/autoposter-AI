@@ -22,6 +22,9 @@ from typing import Any
 
 from fastapi import WebSocket
 
+from app.db import SessionLocal
+from app.services import humanizer as hz
+
 log = logging.getLogger("ws.bridge")
 
 
@@ -71,8 +74,20 @@ class ExtensionBridge:
             if not fut.done():
                 fut.set_result(msg)
         else:
-            # Unsolicited message (e.g., a status ping) — ignore for now
-            log.debug("Unsolicited extension message: %s", msg.get("type"))
+            msg_type = msg.get("type")
+            if msg_type == "session_unhealthy":
+                reason = msg.get("reason") or "unknown"
+                log.warning("Received session_unhealthy from extension: %s", reason)
+                db = SessionLocal()
+                try:
+                    hz.on_session_unhealthy(db, reason=reason)
+                except Exception:
+                    log.exception("Failed to process session_unhealthy")
+                finally:
+                    db.close()
+            else:
+                # Unsolicited message (e.g., a status ping) — ignore for now
+                log.debug("Unsolicited extension message: %s", msg_type)
 
     async def request(self, payload: dict[str, Any], timeout: float = 60.0) -> dict:
         """Send a command to the extension and await its response."""

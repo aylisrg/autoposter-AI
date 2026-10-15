@@ -45,7 +45,7 @@ def list_session_health(db: Session = Depends(get_session)) -> list[SessionHealt
 def activate_pause(db: Session = Depends(get_session)) -> SmartPauseInfo:
     """Manually trigger the smart pause for the configured duration."""
     profile = hz.get_or_create_profile(db)
-    hz._activate_pause(profile, reason="manual pause from dashboard")
+    hz._activate_pause(profile, reason="manual pause from dashboard", db=db)
     db.commit()
     return SmartPauseInfo(
         paused=True,

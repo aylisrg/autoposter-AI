@@ -1089,3 +1089,17 @@ function insertBackspace(el: HTMLElement): void {
 }
 
 console.log("[autoposter-AI] content script loaded", { locale: detectLocale() });
+
+
+// ---------- Proactive session health check ----------
+function checkAndReportUnhealthy(): void {
+  try {
+    assertNotCheckpointed();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    chrome.runtime.sendMessage({ type: "session_unhealthy", reason });
+  }
+}
+// Check shortly after load and then every 30s while the tab is open.
+setTimeout(checkAndReportUnhealthy, 2000);
+setInterval(checkAndReportUnhealthy, 30_000);

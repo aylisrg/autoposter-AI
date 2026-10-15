@@ -17,6 +17,7 @@ import pytest
 from app.db.models import (
     BlackoutDate,
     HumanizerProfile,
+    LogEntry,
     SessionHealth,
     SessionHealthStatus,
 )
@@ -91,6 +92,9 @@ def test_pause_activated_at_threshold(db):
     assert until is not None
     delta_min = (until - datetime.now(UTC)).total_seconds() / 60
     assert 40 <= delta_min <= 46
+    alert = db.query(LogEntry).filter(LogEntry.category == "scheduler").first()
+    assert alert is not None
+    assert "consecutive failures" in alert.message
 
 
 def test_checkpoint_triggers_pause_immediately(db):
