@@ -18,6 +18,7 @@ import { InfoPopover } from "@/components/ui/info-popover";
 import { POST_TYPE_OPTIONS, labelForPostType } from "@/lib/post-types";
 import {
   getBusinessProfile,
+  getAutoApproveSuggestions,
   upsertBusinessProfile,
   type BusinessProfile,
   type EmojiDensity,
@@ -64,11 +65,16 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [suggestedTypes, setSuggestedTypes] = useState<string[]>([]);
+  const [threshold, setThreshold] = useState(10);
 
   useEffect(() => {
     (async () => {
       const existing = await getBusinessProfile();
       if (existing) setForm(existing);
+      const sug = await getAutoApproveSuggestions();
+      setSuggestedTypes(sug.suggested_types);
+      setThreshold(sug.threshold);
       setLoading(false);
     })();
   }, []);
@@ -344,25 +350,40 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <FieldLabel hint="Angles you trust enough to skip the review queue for. Anything not in this list still waits for your approval when 'I'll approve each post first' is on.">
+              <FieldLabel hint="Angles you trust enough to skip the review queue for. Anything not in this list still waits for your approval when 'I'll approve each post first' is on. Types that reach the approval threshold are suggested below.">
                 Auto-approve these angles
               </FieldLabel>
+              {suggestedTypes.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Suggested (reached {threshold} recent approvals):{" "}
+                  {suggestedTypes.map(labelForPostType).join(", ")}. Click to enable.
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 {POST_TYPE_OPTIONS.map((opt) => {
                   const on = selectedAuto.includes(opt.value);
+                  const suggested = suggestedTypes.includes(opt.value);
                   return (
                     <button
                       key={opt.value}
                       type="button"
                       onClick={() => toggleAuto(opt.value)}
+                      title={
+                        suggested
+                          ? `Suggested: ${threshold} recent posts of this type were approved. Click to auto-approve.`
+                          : undefined
+                      }
                       className={
                         "rounded-md border px-2.5 py-1 text-xs transition-colors " +
                         (on
                           ? "bg-primary text-primary-foreground border-primary"
+                          : suggested
+                          ? "border-dashed border-primary/60 hover:bg-accent"
                           : "hover:bg-accent")
                       }
                     >
                       {labelForPostType(opt.value)}
+                      {suggested && !on ? " ★" : ""}
                     </button>
                   );
                 })}

@@ -163,6 +163,11 @@ export const getBusinessProfile = () =>
     throw e;
   });
 
+export const getAutoApproveSuggestions = () =>
+  request<{ suggested_types: string[]; threshold: number }>(
+    "/api/business-profile/suggestions",
+  ).catch(() => ({ suggested_types: [], threshold: 10 }));
+
 export const upsertBusinessProfile = (payload: Partial<BusinessProfile>) =>
   request<BusinessProfile>("/api/business-profile", {
     method: "PUT",

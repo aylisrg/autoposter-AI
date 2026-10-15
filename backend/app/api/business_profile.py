@@ -90,3 +90,42 @@ def delete_profile(db: Session = Depends(get_session)) -> None:
     db.delete(profile)
     db.commit()
     invalidate_profile_cache()
+
+
+from app.config import settings
+from app.db.models import Post, PostStatus, PostType
+
+
+@router.get("/suggestions")
+def get_auto_approve_suggestions(
+    profile: BusinessProfile | None = Depends(get_current_profile),
+    db: Session = Depends(get_session),
+) -> dict:
+    """Return post types that have reached the approval threshold and are not yet auto-approved.
+
+    Threshold defaults to 10 recent non-pending-review posts of that type.
+    """
+    if profile is None:
+        return {"suggested_types": [], "threshold": 10}
+
+    threshold = settings.auto_approve_threshold
+    already = set(profile.auto_approve_types or [])
+
+    suggested: list[str] = []
+    for ptype in PostType:
+        if ptype.value in already:
+            continue
+        recent = (
+            db.query(Post.id)
+            .filter(
+                Post.post_type == ptype,
+                Post.status != PostStatus.PENDING_REVIEW,
+            )
+            .order_by(Post.created_at.desc())
+            .limit(threshold)
+            .all()
+        )
+        if len(recent) >= threshold:
+            suggested.append(ptype.value)
+
+    return {"suggested_types": suggested, "threshold": threshold}

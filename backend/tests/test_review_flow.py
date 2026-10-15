@@ -225,3 +225,26 @@ def test_thumbs_feedback_on_pending_post(client, fake_generate_post):
         json={"post_id": post["id"], "rating": "up"},
     )
     assert r.status_code == 201
+
+
+def test_auto_approve_suggestions_after_threshold(client, fake_generate_post, monkeypatch):
+    """Suggestions appear once a type has enough non-pending posts and is not already auto-approved."""
+    monkeypatch.setattr("app.config.settings.auto_approve_threshold", 2)
+
+    _put_profile(client, review_before_posting=True, auto_approve_types=[])
+
+    # Generate and approve 2 informative posts
+    for _ in range(2):
+        post = _generate(client, post_type="informative")
+        r = client.post(f"/api/posts/{post['id']}/approve", json={})
+        assert r.status_code == 200
+
+    # One hard_sell still pending — should not suggest
+    _generate(client, post_type="hard_sell")
+
+    r = client.get("/api/business-profile/suggestions")
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert "informative" in data["suggested_types"]
+    assert "hard_sell" not in data["suggested_types"]
+    assert data["threshold"] == 2
