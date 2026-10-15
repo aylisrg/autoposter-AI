@@ -377,6 +377,7 @@ class MediaAsset(Base):
     duration_sec: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_caption: Mapped[str | None] = mapped_column(Text, nullable=True)
     ai_tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    embedding: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
     tags_user: Mapped[list[str]] = mapped_column(JSON, default=list)
     variants_json: Mapped[dict] = mapped_column(JSON, default=dict)
     tagged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
