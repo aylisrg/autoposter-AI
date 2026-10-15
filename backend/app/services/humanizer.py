@@ -215,3 +215,51 @@ def humanizer_config_for_extension(profile: HumanizerProfile) -> dict:
         "idle_scroll_before_post_sec_min": profile.idle_scroll_before_post_sec_min,
         "idle_scroll_before_post_sec_max": profile.idle_scroll_before_post_sec_max,
     }
+
+
+def generate_action_sequence(post, profile: HumanizerProfile | None = None) -> list[dict]:
+    """Generate a JSON plan of human-like actions for the extension to execute one post.
+
+    Sequence: open feed → scroll N → (optional like) → open composer → type at WPM X
+    with mistakes Y → pause Z → post.
+
+    `post` may be a Post instance or a string of the text to type.
+    """
+    import random
+
+    if profile is None:
+        # Caller should normally pass the singleton; defaults used only for unit tests.
+        profile = HumanizerProfile()
+
+    text = post.text if hasattr(post, "text") else str(post)
+    wpm = random.randint(profile.typing_wpm_min, profile.typing_wpm_max)
+    scroll_sec = random.randint(
+        profile.idle_scroll_before_post_sec_min,
+        profile.idle_scroll_before_post_sec_max,
+    )
+    pause_ms = random.randint(
+        profile.pause_between_sentences_ms_min,
+        profile.pause_between_sentences_ms_max,
+    )
+
+    actions = [
+        {"action": "open_feed"},
+        {"action": "scroll", "seconds": scroll_sec},
+    ]
+    # Optional random like (maps to like_random_post_chance concept; use fixed low chance if not in model)
+    if random.random() < 0.15:
+        actions.append({"action": "like_random_post"})
+    actions.extend(
+        [
+            {"action": "open_composer"},
+            {
+                "action": "type",
+                "text": text,
+                "wpm": wpm,
+                "mistake_rate": profile.mistake_rate,
+            },
+            {"action": "pause", "ms": pause_ms},
+            {"action": "post"},
+        ]
+    )
+    return actions
